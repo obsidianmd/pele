@@ -2,17 +2,19 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { prepareTextForParsing } from '../../src/diagrams/sankey/parser.js';
 import { cleanupComments } from '../../src/preprocess.js';
+import { decodeEntities } from '../../src/text/entities.js';
 import { loadCorpus, mutator, random } from '../support/corpus.js';
 import { oracleParse, oracleTokens, peleParse, peleTokens } from '../support/sankey-oracle.js';
 
 // Compares Pele's sankey lexer and parser with the parser Mermaid generates from sankey.jison:
-// the same tokens, the same accept or reject decision, and the same calls into the model.
+// the same tokens and model calls for ASCII inputs. Pele additionally rejects decoded names
+// forbidden in XML. Unicode names are a Pele extension, covered by the rendering tests.
 // Set FUZZ to raise the number of mutated inputs.
 
 const FRAGMENTS = [
   ' ', '  ', '\n', '\n\n', '\r\n', '\r', '\t', ',', ',,', '"', '""', '"""', '","', '"a,b"', '"a ""b"" c"', '"\n"', 'a', 'b',
   'A b', '1', '0', '-1', '1.5', '.5', '1e3', '1e', 'NaN', 'Infinity', 'x1', '10%', 'sankey', 'sankey-beta', 'sankey\n',
-  'SANKEY', 'sankey-', 'sankeyx', 'sankey-betax', "'", '&', '/', '-', ';', '#', '%', '%%', '~', '\x7f', '\x1f', 'é', 'ö',
+  'SANKEY', 'sankey-', 'sankeyx', 'sankey-betax', "'", '&', '/', '-', ';', '#', '%', '%%', '~', '\x7f', '\x1f',
   '__proto__', 'constructor', 'a,b,1', '\na,b,1', 'a,b,1\n', '"a","b","1"', ' a , b , 1 ',
 ];
 
@@ -35,8 +37,14 @@ function compare(src: string): void {
   expect(peleTokens(src), `tokens of ${JSON.stringify(src)}`).toEqual(oracleTokens(src));
   const expected = oracleParse(src);
   const actual = peleParse(src);
-  expect(actual.ok, `acceptance of ${JSON.stringify(src)}`).toBe(expected.ok);
-  if (expected.ok) expect(actual.calls, `model calls of ${JSON.stringify(src)}`).toEqual(expected.calls);
+  const invalidName = expected.calls.some(([method, name]) =>
+    method === 'findOrCreateNode' && typeof name === 'string' && [...decodeEntities(name)].some((char) => {
+      const c = char.codePointAt(0)!;
+      return c !== 9 && c !== 10 && c !== 13 && (c < 32 || (c >= 0xd800 && c <= 0xdfff) || c === 0xfffe || c === 0xffff);
+    })
+  );
+  expect(actual.ok, `acceptance of ${JSON.stringify(src)}`).toBe(expected.ok && !invalidName);
+  if (expected.ok && !invalidName) expect(actual.calls, `model calls of ${JSON.stringify(src)}`).toEqual(expected.calls);
   expect(prepareTextForParsing(src), `preparation of ${JSON.stringify(src)}`).toBe(reference(src));
 }
 
@@ -48,6 +56,12 @@ describe('sankey parser against the Mermaid grammar', () => {
   it('agrees on every spec and documentation input', () => {
     for (const src of corpus) compare(src);
     expect(corpus.filter((src) => oracleParse(src).ok).length).toBeGreaterThan(10);
+  });
+
+  it('rejects XML-invalid entity names while keeping the reference tokens', () => {
+    for (const entity of ['&#1;', '&#65534;', '&#65535;', '&#xFFFE;', '&#xFFFF;']) {
+      compare(`sankey\na${entity},b,1\n`);
+    }
   });
 
   it('agrees on mutated inputs', () => {

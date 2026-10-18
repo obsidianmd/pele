@@ -164,6 +164,99 @@ describe('sankey rendering', () => {
     expect(svg).toContain('>Lighting &amp; appliances <tspan');
   });
 
+  for (const keyword of ['sankey', 'sankey-beta']) {
+    for (const [from, to] of [
+      ['Доход', 'Расходы'],
+      ['Café', 'München'],
+      ['収入', '支出'],
+      ['☀️', '🏠'],
+      ['Cafe\u0301', 'Cafe\u0300'],
+    ]) {
+      for (const quoted of [false, true]) {
+        it(`keeps Unicode names ${from}, ${to} with ${keyword}, quoted=${quoted}`, () => {
+          const field = (name: string): string => quoted ? `"${name}"` : name;
+          const src = `${keyword}\n${field(from)},${field(to)},100\n`;
+          const model = parse(src);
+          expect(model.type).toBe('sankey');
+          if (model.type === 'sankey') {
+            expect(model.nodes.map((node) => node.id)).toEqual([from, to]);
+            expect(model.links.map((link) => [link.source.id, link.target.id, link.value])).toEqual([[from, to, 100]]);
+          }
+          const { svg } = render(src, options);
+          assertWellFormed(svg);
+          expect(svg).toContain(`data-id="${from}"`);
+          expect(svg).toContain(`data-id="${to}"`);
+          expect(svg).toContain(`>${from} <tspan`);
+          expect(svg).toContain(`>${to} <tspan`);
+        });
+      }
+    }
+
+    it(`keeps CSV escaping and node identity with Unicode names in ${keyword}`, () => {
+      const src = `${keyword}\n"Доход, ""чистый""",Café,2\nCafé,収入,1\n`;
+      const model = parse(src);
+      expect(model.type).toBe('sankey');
+      if (model.type === 'sankey') {
+        expect(model.nodes.map((node) => node.id)).toEqual(['Доход, "чистый"', 'Café', '収入']);
+        expect(model.links[0].target).toBe(model.links[1].source);
+      }
+      const { svg } = render(src, options);
+      assertWellFormed(svg);
+      expect(svg).toContain('>Доход, &quot;чистый&quot; <tspan');
+    });
+
+    it(`decodes entity codes in Unicode names in ${keyword}`, () => {
+      const src = `${keyword}\n"Доход #35; #amp; #34;чистый#34;",Расходы,1\n`;
+      for (const labelStyle of ['normal', 'outlined']) {
+        const { svg } = render(configured(`labelStyle: ${labelStyle}`, src), options);
+        assertWellFormed(svg);
+        expect(svg).toContain('>Доход # &amp; &quot;чистый&quot; <tspan');
+        expect(svg).toContain('data-id="Доход # &amp; &quot;чистый&quot;"');
+        expect(svg).toContain('<title>Доход # &amp; &quot;чистый&quot; → Расходы: 1</title>');
+        expect(svg).not.toMatch(/ﬂ°|¶ß/);
+      }
+    });
+
+    it(`rejects malformed CSV containing Unicode names in ${keyword}`, () => {
+      for (const row of ['Доход,Расходы', 'Доход,Расходы,1,2', '"Доход,Расходы,1', '"Доход"x,Расходы,1', 'Доход,,1']) {
+        expect(() => parse(`${keyword}\n${row}\n`), row).toThrow(PeleError);
+      }
+    });
+
+    it(`rejects control characters and invalid Unicode in names in ${keyword}`, () => {
+      for (const c of ['\x00', '\x01', '\t', '\x1f', '\x7f', '\x80', '\x9f', '\ud800', '\udfff', '\ufffe', '\uffff']) {
+        for (const name of [`a${c}b`, `"a${c}b"`]) {
+          expect(() => parse(`${keyword}\n${name},c,1\n`), JSON.stringify(name)).toThrow(PeleError);
+        }
+      }
+    });
+
+    it(`rejects entity codes for invalid XML characters in ${keyword}`, () => {
+      for (const entity of ['#65534;', '#65535;', '&#65534;', '&#65535;', '#amp;#35;xFFFE;', '#amp;#35;xFFFF;', '#1;']) {
+        for (const name of [`a${entity}`, `"a${entity}"`]) {
+          for (const row of [`${name},b,1`, `b,${name},1`]) {
+            const src = `${keyword}\n${row}\n`;
+            expect(() => parse(src), src).toThrow(/Invalid XML character in node name/);
+            for (const labelStyle of ['normal', 'outlined']) {
+              expect(() => render(configured(`labelStyle: ${labelStyle}`, src), options), src).toThrow(PeleError);
+            }
+          }
+        }
+      }
+    });
+
+    it(`keeps hexadecimal HTML entity output XML-safe in ${keyword}`, () => {
+      for (const entity of ['&#xFFFE;', '&#xFFFF;', '&#x01;']) {
+        const src = `${keyword}\nДоход ${entity},Расходы,1\n`;
+        for (const labelStyle of ['normal', 'outlined']) {
+          const { svg } = render(configured(`labelStyle: ${labelStyle}`, src), options);
+          assertWellFormed(svg);
+          expect(svg).not.toMatch(/[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]/u);
+        }
+      }
+    });
+  }
+
   it('accepts comments, blank lines and both keywords', () => {
     const a = render('sankey-beta\n\n%% source,target,value\na,b,1\n\n\nb,c,2\n', options).svg;
     const b = render('sankey\na,b,1\nb,c,2', options).svg;
@@ -185,7 +278,7 @@ describe('sankey rendering', () => {
   });
 
   it('rejects what Mermaid rejects', () => {
-    for (const src of ['sankey\n', 'sankey\na,b\n', 'sankey\na,b,1,2\n', 'sankey\na,,1\n', 'sankey\n"",b,1\n', 'sankey\na,b,1\n   \nc,d,2\n', 'sankey\nCafé,Bar,1\n', 'sankey x\na,b,1\n']) {
+    for (const src of ['sankey\n', 'sankey\na,b\n', 'sankey\na,b,1,2\n', 'sankey\na,,1\n', 'sankey\n"",b,1\n', 'sankey\na,b,1\n   \nc,d,2\n', 'sankey x\na,b,1\n']) {
       expect(() => render(src, options), src).toThrow(PeleError);
     }
     expect(() => render('sankey\na,b\n', options)).toThrow(/Expecting 'COMMA', 'NEWLINE', 'EOF', got 'EOF'|Expecting 'COMMA'/);

@@ -2,6 +2,7 @@ import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num } from '../../svg/builder.js';
 import { svgDocument } from '../../svg/root.js';
 import { resolveStyle, seriesColor } from '../../svg/theme.js';
+import { decodeEntities } from '../../text/entities.js';
 import { layoutLabel } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
 import type { RenderOptions, Rendered } from '../../types.js';
@@ -94,6 +95,7 @@ function draw(model: SankeyModel, conf: Config, options: RenderOptions, chartWid
   let nodesOut = '';
   nodes.forEach((node, i) => {
     const id = model.nodes[i].id;
+    const name = decodeEntities(id);
     const height = Math.max(node.height, 1);
     nodesOut += `<rect class="pele-sankey-node" data-id="${escText(id)}" x="${num(node.x)}" y="${num(node.y)}" width="${num(
       nodeWidth
@@ -101,7 +103,7 @@ function draw(model: SankeyModel, conf: Config, options: RenderOptions, chartWid
 
     const value = showValues ? `${prefix}${rounded(node.value)}${suffix}` : '';
     const after = outlined ? node.layer >= central : node.x < chartWidth / 2;
-    const textWidth = measurer.width(value ? `${id} ${value}` : id, small, 0);
+    const textWidth = measurer.width(value ? `${name} ${value}` : name, small, 0);
     const x = after ? node.x + nodeWidth + LABEL_GAP : node.x - LABEL_GAP;
     const y = node.y + node.height / 2;
     minX = Math.min(minX, after ? x : x - textWidth);
@@ -109,11 +111,11 @@ function draw(model: SankeyModel, conf: Config, options: RenderOptions, chartWid
     minY = Math.min(minY, y - small * 0.75);
     maxY = Math.max(maxY, y + small * 0.75);
     const position = ` x="${num(x)}" y="${num(y + small * 0.35)}" text-anchor="${after ? 'start' : 'end'}"`;
-    const text = esc(id) + (value ? ` <tspan class="pele-sankey-value" fill="var(--_m)">${esc(value)}</tspan>` : '');
+    const text = esc(name) + (value ? ` <tspan class="pele-sankey-value" fill="var(--_m)">${esc(value)}</tspan>` : '');
     labelsOut +=
       `<g class="pele-label" data-id="${escText(id)}">` +
       (outlined
-        ? `<text${position} fill="none" stroke="var(--_bg)" stroke-width="3" stroke-linejoin="round">${esc(id)}${
+        ? `<text${position} fill="none" stroke="var(--_bg)" stroke-width="3" stroke-linejoin="round">${esc(name)}${
             value ? ' ' + esc(value) : ''
           }</text>`
         : '') +

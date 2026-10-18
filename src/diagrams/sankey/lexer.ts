@@ -37,9 +37,14 @@ const enum S {
   escaped_text,
 }
 
-// RFC 4180 TEXTDATA: printable ASCII except the double quote and the comma.
+// RFC 4180 TEXTDATA extended to Unicode, excluding controls and invalid XML characters.
 function isTextData(c: number): boolean {
-  return c >= 32 && c <= 126 && c !== 34 && c !== 44;
+  return (
+    (c >= 32 && c <= 126 && c !== 34 && c !== 44) ||
+    (c >= 0xa0 && c <= 0xd7ff) ||
+    (c >= 0xe000 && c <= 0xfffd) ||
+    (c >= 0x10000 && c <= 0x10ffff)
+  );
 }
 
 export function tokenize(src: string): Tokens {
@@ -71,8 +76,8 @@ export function tokenize(src: string): Tokens {
         continue;
       }
       while (q < n) {
-        const d = src.charCodeAt(q);
-        if (isTextData(d) || d === 44 || d === 13 || d === 10) q++;
+        const d = src.codePointAt(q)!;
+        if (isTextData(d) || d === 44 || d === 13 || d === 10) q += d > 0xffff ? 2 : 1;
         else if (d === 34 && src.charCodeAt(q + 1) === 34) q += 2;
         else break;
       }
@@ -101,7 +106,11 @@ export function tokenize(src: string): Tokens {
         emit(T.DQUOTE, p, p + 1);
         continue;
       }
-      while (q < n && isTextData(src.charCodeAt(q))) q++;
+      while (q < n) {
+        const d = src.codePointAt(q)!;
+        if (!isTextData(d)) break;
+        q += d > 0xffff ? 2 : 1;
+      }
       emit(T.NON_ESCAPED_TEXT, p, q);
     }
     // A character outside the CSV alphabet matches as empty text and is never consumed.

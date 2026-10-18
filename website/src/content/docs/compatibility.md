@@ -77,6 +77,8 @@ Pele limits source length, SVG output size, and edges in flowcharts and agentflo
 
 Labels use SVG text with support for line breaks, bold, and italic. Arbitrary HTML labels are not supported.
 
+Sankey node names also accept Unicode text, including accented letters, non-Latin scripts, and emoji, in quoted and unquoted CSV fields. This extends Mermaid 12.1.0's ASCII-only Sankey grammar. CSV commas, quotes, and line breaks keep their usual meaning.
+
 ### Interaction
 
 `click` statements that open a link are supported. JavaScript callbacks are ignored.
