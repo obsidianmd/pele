@@ -34,6 +34,7 @@ function isWide(c: number): boolean {
 
 function isZeroWidth(c: number): boolean {
   return (
+    c === 0xad ||
     (c >= 0x300 && c <= 0x36f) ||
     (c >= 0x200b && c <= 0x200f) ||
     (c >= 0xdc00 && c <= 0xdfff) ||

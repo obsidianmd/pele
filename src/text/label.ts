@@ -30,8 +30,11 @@ const CJK = '\\u2e80-\\u9fff\\uf900-\\ufaff\\uff00-\\uff60';
 const CLOSE = '、。，．：；！？）］｝」』】〕〉》〙〗ー…‥・ゝゞぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ,.:;!?)\\]}';
 const OPEN = '（［｛「『【〔〈《〘〖([{';
 const RE_CJK = new RegExp(`[${CJK}]`);
+// Zero-width spaces and soft hyphens are break opportunities, as in browsers. A soft hyphen shows as '-' where it breaks.
+const HINT = '\\u200b\\u00ad';
+const RE_HINT = new RegExp(`[${HINT}]`);
 const RE_PIECE = new RegExp(
-  `\\s*(?:[${OPEN}]*[${CJK}][${CLOSE}]*|[^\\s${CJK}]+[${CLOSE}]*)\\s*|\\s+`,
+  `\\s*(?:[${OPEN}]*[${CJK}][${CLOSE}]*|[^\\s${CJK}${HINT}]+[${HINT}]*[${CLOSE}]*|[${HINT}]+)\\s*|\\s+`,
   'g'
 );
 
@@ -145,10 +148,11 @@ function measureSpans(line: Span[], measurer: TextMeasurer, size: number): numbe
 function wrap(line: Span[], measurer: TextMeasurer, size: number, max: number, out: Span[][], widths: number[]): void {
   let current: Span[] = [];
   let width = 0;
-  const commit = (): void => {
+  const commit = (hyphen = false): void => {
     const last = current[current.length - 1];
     if (last && last.icon === undefined) {
-      const trimmed = last.text.trimEnd();
+      let trimmed = last.text.trimEnd();
+      if (hyphen && trimmed.endsWith('­')) trimmed = trimmed.slice(0, -1) + '-';
       if (trimmed !== last.text) {
         last.text = trimmed;
         const w = measurer.width(trimmed, size, last.style);
@@ -171,8 +175,9 @@ function wrap(line: Span[], measurer: TextMeasurer, size: number, max: number, o
     }
     for (const piece of span.text.match(RE_PIECE) ?? []) {
       let part = piece;
-      if (width > 0 && width + measurer.width(part.trimEnd(), size, span.style) > max) {
-        commit();
+      // A trailing soft hyphen is measured as the '-' it becomes if the line breaks there.
+      if (width > 0 && width + measurer.width(part.trimEnd().replace(/­$/, '-'), size, span.style) > max) {
+        commit(true);
         part = part.trimStart();
       }
       const last = current[current.length - 1];
@@ -205,7 +210,7 @@ export function layoutLabel(
   if (!RE_MARKUP.test(raw) && !raw.includes('&') && !raw.includes('ﬂ')) {
     const text = raw.trim();
     const width = measurer.width(text, size, base);
-    if (width <= maxWidth || !(text.includes(' ') || RE_CJK.test(text))) {
+    if (width <= maxWidth || !(text.includes(' ') || RE_CJK.test(text) || RE_HINT.test(text))) {
       return {
         lines: [[{ text, style: base, width }]],
         widths: [width],
