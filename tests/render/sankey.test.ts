@@ -143,6 +143,48 @@ describe('sankey rendering', () => {
     expect(svg).toMatch(/data-id="d"><text[^>]*text-anchor="end"/);
   });
 
+  it('keeps adjacent-column labels clear without moving the bars', () => {
+    const source = `sankey-beta
+Visitors,Signed up,3200
+Visitors,Bounced,9800
+Signed up,Opened a folder,2100
+Signed up,Never returned,1100
+Opened a folder,Ran Agency,1450
+Opened a folder,Write-only,650
+Ran Agency,Upgraded to Pro,380
+Ran Agency,Stayed free,1070
+Upgraded to Pro,Upgraded to Team,96
+Upgraded to Pro,Stayed on Pro,284`;
+    for (const fontSize of [14, 16]) {
+      const { svg } = render(source, { ...options, fontSize, maxWidth: 664 });
+      const bounds = (id: string, value: number): [number, number, number] => {
+        const label = new RegExp(`data-id="${id}"><text x="([\\d.]+)" y="([\\d.]+)" text-anchor="([^"]+)"`).exec(svg)!;
+        const width = metricsMeasurer.width(`${id} ${value}`, Math.round(fontSize * 0.875), 0);
+        const left = Number(label[1]) - (label[3] === 'end' ? width : 0);
+        return [left, left + width, Number(label[2])];
+      };
+      const a = bounds('Opened a folder', 2100);
+      const b = bounds('Ran Agency', 1450);
+      expect(a[1] <= b[0] || b[1] <= a[0] || Math.abs(a[2] - b[2]) >= Math.round(fontSize * 0.875) * 1.5).toBe(true);
+      expect(svg).toContain('>1450</tspan>');
+      const hidden = render(configured('showValues: false', source), { ...options, fontSize }).svg;
+      expect([...svg.matchAll(/class="pele-sankey-node"[^>]* x="([^"]+)"/g)].map((m) => m[1])).toEqual(
+        [...hidden.matchAll(/class="pele-sankey-node"[^>]* x="([^"]+)"/g)].map((m) => m[1])
+      );
+    }
+  });
+
+  it('keeps a moved label beside its own bar', () => {
+    const { svg } = render(configured('showValues: false', 'sankey\nA,B,1\nC,D,200\nE,F,1\nF,G,600\nG,D,200\nB,D,1\n'), options);
+    const label = Number(/data-id="E"><text x="[\d.]+" y="([\d.]+)"/.exec(svg)![1]) - Math.round(16 * 0.875) * 0.35;
+    const bar = (id: string): [number, number] => {
+      const m = new RegExp(`class="pele-sankey-node" data-id="${id}" x="[^"]+" y="([^"]+)" width="[^"]+" height="([^"]+)"`).exec(svg)!;
+      return [Number(m[1]), Number(m[1]) + Number(m[2])];
+    };
+    const gap = ([top, bottom]: [number, number]): number => Math.max(0, top - label, label - bottom);
+    expect(gap(bar('E'))).toBeLessThan(gap(bar('C')));
+  });
+
   it('grows the picture to hold labels that reach outside the chart', () => {
     const { width, svg } = render(configured('labelStyle: outlined', 'sankey\nA,Somewhere with a very long name indeed,1\n'), options);
     expect(width).toBeGreaterThan(800);

@@ -12,6 +12,7 @@ import { layoutSankey, type Alignment } from './layout.js';
 
 const LABEL_GAP = 6;
 const VALUE_GAP = 15;
+const CAREFUL = 300;
 
 function isRecord(value: unknown): value is Config {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -45,6 +46,7 @@ export function renderSankey(model: SankeyModel, config: Config, options: Render
 function draw(model: SankeyModel, conf: Config, options: RenderOptions, chartWidth: number): Rendered {
   const size = options.fontSize ?? 16;
   const small = Math.round(size * 0.875);
+  const lineHeight = small * 1.5;
   const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
   const pad = options.padding ?? 8;
 
@@ -78,7 +80,8 @@ function draw(model: SankeyModel, conf: Config, options: RenderOptions, chartWid
   }
   const nodeStyle = (i: number): string => custom.get(model.nodes[i].id) ?? '';
 
-  // Labels sit beside the bars, on the side that faces the middle of the chart.
+  // Labels sit beside the bars, on the side that faces the middle of the chart unless that
+  // side is crowded.
   let central = 0;
   let most = 0;
   nodes.forEach((node) => {
@@ -91,6 +94,29 @@ function draw(model: SankeyModel, conf: Config, options: RenderOptions, chartWid
   let maxX = chartWidth;
   let minY = 0;
   let maxY = chartHeight;
+  const labels = nodes.map((node, i) => {
+    const name = decodeEntities(model.nodes[i].id);
+    const value = showValues ? `${prefix}${rounded(node.value)}${suffix}` : '';
+    const width = measurer.width(value ? `${name} ${value}` : name, small, 0);
+    const after = outlined ? node.layer >= central : node.x < chartWidth / 2;
+    const x = after ? node.x + nodeWidth + LABEL_GAP : node.x - LABEL_GAP;
+    const y = node.y + node.height / 2;
+    minX = Math.min(minX, after ? x : x - width);
+    maxX = Math.max(maxX, after ? x + width : x);
+    minY = Math.min(minY, y - small * 0.75);
+    maxY = Math.max(maxY, y + small * 0.75);
+    return { value, width, after, left: after ? x : x - width, y };
+  });
+  // A label moves at most one line; retain two bands on each side.
+  const bands = new Map<number, typeof labels>();
+  if (nodes.length <= CAREFUL) for (const label of labels) {
+    const band = Math.floor(label.y / lineHeight);
+    for (const key of [band - 2, band - 1, band, band + 1, band + 2]) {
+      const nearby = bands.get(key);
+      if (nearby) nearby.push(label);
+      else bands.set(key, [label]);
+    }
+  }
   let labelsOut = '';
   let nodesOut = '';
   nodes.forEach((node, i) => {
@@ -101,15 +127,30 @@ function draw(model: SankeyModel, conf: Config, options: RenderOptions, chartWid
       nodeWidth
     )}" height="${num(height)}" rx="${num(Math.min(2, height / 2))}" fill="${seriesColor(i)}"${nodeStyle(i)}/>`;
 
-    const value = showValues ? `${prefix}${rounded(node.value)}${suffix}` : '';
-    const after = outlined ? node.layer >= central : node.x < chartWidth / 2;
-    const textWidth = measurer.width(value ? `${name} ${value}` : name, small, 0);
+    const label = labels[i];
+    const overlapsLabel = (left: number, y: number): boolean => (bands.get(Math.floor(y / lineHeight)) ?? []).some((other) =>
+      other !== label && Math.abs(other.y - y) < lineHeight && left < other.left + other.width + LABEL_GAP && left + label.width > other.left - LABEL_GAP
+    );
+    // Try the other side, then an adjacent line when both sides are crowded.
+    if (nodes.length <= CAREFUL && overlapsLabel(label.left, label.y)) {
+      place: for (const dy of [0, -lineHeight, lineHeight]) {
+        for (const after of [label.after, !label.after]) {
+          const left = after ? node.x + nodeWidth + LABEL_GAP : node.x - LABEL_GAP - label.width;
+          const y = label.y + dy;
+          if (overlapsLabel(left, y) || left < minX || left + label.width > maxX || y - small * 0.75 < minY || y + small * 0.75 > maxY) continue;
+          if (nodes.some((bar, j) => j !== i && left < bar.x + nodeWidth + LABEL_GAP && left + label.width > bar.x - LABEL_GAP && y - small * 0.75 < bar.y + bar.height && y + small * 0.75 > bar.y)) continue;
+          // A label stays nearer its own bar than any other in the column, so it can't name that one.
+          const own = Math.max(0, node.y - y, y - node.y - node.height);
+          if (nodes.some((bar, j) => j !== i && bar.x === node.x && Math.max(0, bar.y - y, y - bar.y - bar.height) <= own)) continue;
+          label.left = left;
+          label.y = y;
+          label.after = after;
+          break place;
+        }
+      }
+    }
+    const { value, after, y } = label;
     const x = after ? node.x + nodeWidth + LABEL_GAP : node.x - LABEL_GAP;
-    const y = node.y + node.height / 2;
-    minX = Math.min(minX, after ? x : x - textWidth);
-    maxX = Math.max(maxX, after ? x + textWidth : x);
-    minY = Math.min(minY, y - small * 0.75);
-    maxY = Math.max(maxY, y + small * 0.75);
     const position = ` x="${num(x)}" y="${num(y + small * 0.35)}" text-anchor="${after ? 'start' : 'end'}"`;
     const text = esc(name) + (value ? ` <tspan class="pele-sankey-value" fill="var(--_m)">${esc(value)}</tspan>` : '');
     labelsOut +=
