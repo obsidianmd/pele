@@ -232,7 +232,7 @@ describe('sankey rendering', () => {
     });
 
     it(`rejects entity codes for invalid XML characters in ${keyword}`, () => {
-      for (const entity of ['#65534;', '#65535;', '&#65534;', '&#65535;', '#amp;#35;xFFFE;', '#amp;#35;xFFFF;', '#1;']) {
+      for (const entity of ['#65534;', '#65535;', '&#65534;', '&#65535;', '#1;']) {
         for (const name of [`a${entity}`, `"a${entity}"`]) {
           for (const row of [`${name},b,1`, `b,${name},1`]) {
             const src = `${keyword}\n${row}\n`;
@@ -242,6 +242,14 @@ describe('sankey rendering', () => {
             }
           }
         }
+      }
+    });
+
+    it(`shows a double-encoded entity code as text in ${keyword}`, () => {
+      for (const name of ['a#amp;#35;xFFFE;', '"a#amp;#35;xFFFE;"']) {
+        const { svg } = render(`${keyword}\n${name},b,1\n`, options);
+        assertWellFormed(svg);
+        expect(svg).toContain('>a&amp;#xFFFE; <tspan');
       }
     });
 
