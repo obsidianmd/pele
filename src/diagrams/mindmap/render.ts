@@ -1,10 +1,11 @@
 import type { Config } from '../../preprocess.js';
+import { titleLabel } from '../../svg/title.js';
 import { escText, labelSvg, num } from '../../svg/builder.js';
 import { svgDocument } from '../../svg/root.js';
 import { drawShape, shapeInset, shapeSize } from '../../svg/shapes.js';
 import { classNames, seriesColor } from '../../svg/theme.js';
-import { layoutLabel, type Label } from '../../text/label.js';
-import { Style, defaultMeasurer } from '../../text/measurer.js';
+import { labelLine, layoutLabel, lineMiddle, type Label } from '../../text/label.js';
+import { defaultMeasurer } from '../../text/measurer.js';
 import type { RenderOptions, Rendered } from '../../types.js';
 import { titleRoom, turnToFit } from '../common/fit-width.js';
 import { iconMarkup } from '../../text/icons.js';
@@ -35,10 +36,9 @@ const ROW_GAP = 10;
 function leftLabel(label: Label, left: number, cy: number, icons: RenderOptions['icons']): string {
   if (label.lines.length < 2) return labelSvg(label, left + label.width / 2, cy, ' class="pele-label"', icons);
   let out = '';
+  const top = cy - label.height / 2;
   for (let k = 0; k < label.lines.length; k++) {
-    const width = label.widths[k];
-    const line: Label = { lines: [label.lines[k]], widths: [width], width, height: label.lineHeight, size: label.size, lineHeight: label.lineHeight };
-    out += labelSvg(line, left + width / 2, cy + (k - (label.lines.length - 1) / 2) * label.lineHeight, ' class="pele-label"', icons);
+    out += labelSvg(labelLine(label, k), left + label.widths[k] / 2, top + lineMiddle(label, k), ' class="pele-label"', icons);
   }
   return out;
 }
@@ -286,7 +286,7 @@ function draw(model: MindmapModel, config: Config, options: RenderOptions, down:
     else out += group;
   }
 
-  const title = layoutLabel(model.title, false, measurer, size, titleRoom(options), Style.Bold);
+  const title = titleLabel(model.title, measurer, size, titleRoom(options));
   const titleHeight = title.height > 0 ? title.height + 16 : 0;
   const width = Math.max(maxX - minX, title.width);
   const totalWidth = Math.ceil(width + 2 * pad);

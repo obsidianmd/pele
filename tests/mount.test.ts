@@ -284,9 +284,11 @@ describe('mount', () => {
     const handle = mount(el, SANKEY, { ...options, onError: (error) => errors.push(error) });
     handle.update(FLOW);
     expect(handle.result?.type).toBe('flowchart');
+    expect(handle.result?.mermaidType).toBe('flowchart-v2');
     expect(el.innerHTML).toBe(render(FLOW, { ...options, maxWidth: 320 }).svg);
     handle.update('flowchart LR\n  A -->');
     expect(handle.error).toBeInstanceOf(PeleError);
+    expect((handle.error as PeleError).mermaidType).toBe('flowchart-v2');
     expect(errors).toEqual([handle.error]);
     expect(handle.source).toBe('flowchart LR\n  A -->');
     expect(handle.result?.type).toBe('flowchart');

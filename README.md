@@ -95,6 +95,8 @@ npm run build
 npm run bench
 ```
 
+`npm run bench:mermaid` times Pele and Mermaid.js in headless Chrome on the same diagrams and compares bundle sizes. It needs Node 22 or later. It fetches Mermaid 12.1.0 from unpkg; pass `-- --mermaid <version>` for another release, and set `CHROME` if Chrome is not in `/Applications`.
+
 The documentation site and playground are in `website/` and use Node 24 and pnpm 12. With nvm:
 
 ```sh

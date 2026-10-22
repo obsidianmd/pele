@@ -89,6 +89,10 @@ See [Security](/security#links-and-images) to configure allowed links and images
 
 Pass an [`icons`](/api#renderoptions) resolver to supply custom icons such as `fa:fa-car`. Architecture and tree view also have built-in symbols.
 
+### Math
+
+Mermaid 12.1 uses KaTeX to typeset `$$...$$` in labels. Pass a [`math`](/api#math) resolver to typeset the same labels in Pele with KaTeX, Temml, MathJax, or another typesetter. If you don't pass a resolver, labels show the TeX source.
+
 ## Reporting differences
 
 If Pele rejects or misreads Mermaid 12.1.0 syntax, compare the diagram in the [Playground](/playground) and [report the difference](https://github.com/obsidianmd/pele/issues).

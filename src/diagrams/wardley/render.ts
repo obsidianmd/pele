@@ -2,7 +2,7 @@ import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num, sharedStyle, spanStyle, textStyle } from '../../svg/builder.js';
 import { marker, markerTrim } from '../../svg/edges.js';
 import { svgDocument } from '../../svg/root.js';
-import { RADIUS } from '../../svg/theme.js';
+import { ROUNDED } from '../../svg/theme.js';
 import { layoutLabel, type Label } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
 import type { RenderOptions, Rendered } from '../../types.js';
@@ -162,7 +162,7 @@ function draw(model: WardleyModel, config: Config, options: RenderOptions, plotW
       `<g class="pele-wardley-pipeline" data-id="${escText(pipeline.nodeId)}">` +
       `<rect x="${num(left - PIPELINE_PAD)}" y="${num(top)}" width="${num(right - left + 2 * PIPELINE_PAD)}" height="${num(
         4 * R
-      )}" rx="${RADIUS}" fill="var(--_s)" stroke="var(--_b)"/>` +
+      )}" fill="var(--_s)" stroke="var(--_b)"${ROUNDED}/>` +
       (parts.length > 1 ? `<path d="M${num(left)},${num(y)}H${num(right)}" stroke="${LINE}" stroke-dasharray="4 4"/>` : '') +
       '</g>';
   }
@@ -362,7 +362,7 @@ function draw(model: WardleyModel, config: Config, options: RenderOptions, plotW
     annotations +=
       `<g class="pele-wardley-annotations"><rect x="${num(bx)}" y="${num(by)}" width="${num(width)}" height="${num(
         height
-      )}" rx="${RADIUS}" fill="var(--_bg)" stroke="var(--_b)"/>${rows}</g>`;
+      )}" fill="var(--_bg)" stroke="var(--_b)"${ROUNDED}/>${rows}</g>`;
   }
 
   let notes = '';

@@ -1,10 +1,11 @@
 import { cnode, compoundLayout, direction, type CEdge, type CNode } from '../../layout/compound.js';
+import { titleLabel } from '../../svg/title.js';
 import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num, sharedStyle, spanStyle, textStyle } from '../../svg/builder.js';
 import { edgeLabelSvg, routePath, type EdgePath } from '../../svg/edges.js';
 import { svgDocument } from '../../svg/root.js';
-import { RADIUS, classNames, resolveStyle, type ResolvedStyle } from '../../svg/theme.js';
-import { layoutLabel, type Label } from '../../text/label.js';
+import { classNames, resolveStyle, rounded, type ResolvedStyle } from '../../svg/theme.js';
+import { hasMath, labelLine, layoutLabel, lineMiddle, type Label } from '../../text/label.js';
 import { Style, defaultMeasurer, type TextMeasurer } from '../../text/measurer.js';
 import type { RenderOptions, Rendered } from '../../types.js';
 import { runsAcross, turnToFit } from '../common/fit-width.js';
@@ -56,7 +57,7 @@ function restyle(label: Label, bits: number, measurer: TextMeasurer): Label {
     let total = 0;
     const spans = line.map((span) => {
       const style = span.style | bits;
-      const w = span.icon !== undefined ? span.width : measurer.width(span.text, label.size, style);
+      const w = span.icon !== undefined || span.math ? span.width : measurer.width(span.text, label.size, style);
       total += w;
       return { ...span, style, width: w };
     });
@@ -69,19 +70,25 @@ function restyle(label: Label, bits: number, measurer: TextMeasurer): Label {
 
 // Writes a measured label with its lines starting at x, the first line's box starting at top.
 function startText(label: Label, x: number, top: number, attrs: string): string {
-  let y = top + label.lineHeight / 2 + label.size * 0.35;
   const shared = sharedStyle(label);
   let body = '';
-  for (const line of label.lines) {
+  let math = '';
+  for (let i = 0; i < label.lines.length; i++) {
+    const line = label.lines[i];
+    const middle = top + lineMiddle(label, i);
+    if (hasMath(line)) {
+      math += labelSvg(labelLine(label, i), x + label.widths[i] / 2, middle, attrs);
+      continue;
+    }
+    const y = middle + label.size * 0.35;
     let first = true;
     for (const span of line) {
       if (span.icon !== undefined || span.text === '') continue;
       body += `<tspan${first ? ` x="${num(x)}" y="${num(y)}"` : ''}${spanStyle(span.style & ~shared)}>${esc(span.text)}</tspan>`;
       first = false;
     }
-    y += label.lineHeight;
   }
-  return body === '' ? '' : `<text${textStyle(attrs, shared)} text-anchor="start" xml:space="preserve">${body}</text>`;
+  return (body === '' ? '' : `<text${textStyle(attrs, shared)} text-anchor="start" xml:space="preserve">${body}</text>`) + math;
 }
 
 // The containment mark: a circled plus whose rim touches (x, y), where (dx, dy) points at the node.
@@ -248,7 +255,7 @@ function draw(model: RequirementModel, _config: Config, options: RenderOptions, 
 
   spreadEnds(cnodes, cedges, views);
 
-  const title = layoutLabel(model.title, false, measurer, size, 4000, Style.Bold);
+  const title = titleLabel(model.title, measurer, size, 4000);
   const titleHeight = title.height > 0 ? title.height + 12 : 0;
   const inner = Math.max(layout.width, title.width);
   const ox = pad + (inner - layout.width) / 2;
@@ -263,7 +270,7 @@ function draw(model: RequirementModel, _config: Config, options: RenderOptions, 
     const left = -w / 2;
     const top = -h / 2;
     let body =
-      `<rect x="${num(left)}" y="${num(top)}" width="${num(w)}" height="${num(h)}" rx="${RADIUS}" fill="var(--_s)" stroke="var(--_b)"${style.shape}/>` +
+      `<rect x="${num(left)}" y="${num(top)}" width="${num(w)}" height="${num(h)}" fill="var(--_s)" stroke="var(--_b)"${rounded(style.shape)}/>` +
       labelSvg(
         view.kind,
         0,

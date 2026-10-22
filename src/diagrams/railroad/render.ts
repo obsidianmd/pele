@@ -1,7 +1,7 @@
 import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num } from '../../svg/builder.js';
 import { svgDocument } from '../../svg/root.js';
-import { FONT_MONO, RADIUS } from '../../svg/theme.js';
+import { FONT_MONO, ROUNDED } from '../../svg/theme.js';
 import { decodeEntities } from '../../text/entities.js';
 import { layoutLabel } from '../../text/label.js';
 import { Style, defaultMeasurer, type TextMeasurer } from '../../text/measurer.js';
@@ -368,10 +368,10 @@ function draw(model: RailroadModel, config: Config, options: RenderOptions, tigh
           if (box.kind === Kind.Terminal) {
             nodes += `<g class="pele-node pele-terminal">${shape} rx="${num(boxTop)}" fill="var(--_s)" stroke="var(--_b)"${stroke}/>${label} font-family="${FONT_MONO}">${esc(text)}</text></g>`;
           } else if (box.kind === Kind.NonTerminal) {
-            nodes += `<g class="pele-node pele-nonterminal" data-id="${escText(box.id)}">${shape} rx="${RADIUS}" fill="var(--_bg)" stroke="var(--_b)"${stroke}/>${label}>${esc(text)}</text></g>`;
+            nodes += `<g class="pele-node pele-nonterminal" data-id="${escText(box.id)}">${shape} fill="var(--_bg)" stroke="var(--_b)"${stroke}${ROUNDED}/>${label}>${esc(text)}</text></g>`;
           } else {
             nodes +=
-              `<g class="pele-node pele-special">${shape} rx="${RADIUS}" fill="var(--_bg)" stroke="var(--_b)" stroke-dasharray="4 3"${stroke}/>` +
+              `<g class="pele-node pele-special">${shape} fill="var(--_bg)" stroke="var(--_b)" stroke-dasharray="4 3"${stroke}${ROUNDED}/>` +
               `${label} font-style="italic"><tspan fill="var(--_m)">? </tspan>${esc(text.slice(2, -2))}<tspan fill="var(--_m)"> ?</tspan></text></g>`;
           }
         }

@@ -35,7 +35,7 @@ describe('info rendering', () => {
     const { svg } = render(src, options);
     expect(svg).toContain('<title id="pele-title">Name</title>');
     expect(svg).toContain('<desc id="pele-desc">Text</desc>');
-    expect(parse(src)).toEqual({ type: 'info', title: undefined, accTitle: 'Name', accDescr: 'Text' });
+    expect(parse(src)).toEqual({ type: 'info', mermaidType: 'info', title: undefined, accTitle: 'Name', accDescr: 'Text' });
   });
 
   it('rejects anything else after the keyword', () => {

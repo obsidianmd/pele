@@ -1,7 +1,7 @@
 import type { Config } from '../../preprocess.js';
 import { escText, labelSvg, num } from '../../svg/builder.js';
 import { svgDocument } from '../../svg/root.js';
-import { RADIUS, seriesColor } from '../../svg/theme.js';
+import { ROUNDED, seriesColor } from '../../svg/theme.js';
 import { layoutLabel, type Label } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
 import type { RenderOptions, Rendered } from '../../types.js';
@@ -231,7 +231,7 @@ function draw(model: GitModel, config: Config, options: RenderOptions, direction
       if (name.lines.length > 0) {
         grow(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2);
         branches +=
-          `<rect x="${num(cx - w / 2)}" y="${num(cy - h / 2)}" width="${num(w)}" height="${num(h)}" rx="${RADIUS}" fill="${color}"/>` +
+          `<rect x="${num(cx - w / 2)}" y="${num(cy - h / 2)}" width="${num(w)}" height="${num(h)}" fill="${color}"${ROUNDED}/>` +
           labelSvg(name, cx, cy, ' class="pele-label" fill="var(--_bg)"');
       }
       branches += '</g>';

@@ -1,7 +1,7 @@
 import type { Config } from '../../preprocess.js';
 import { escText, labelSvg, num } from '../../svg/builder.js';
 import { svgDocument } from '../../svg/root.js';
-import { RADIUS, classNames, resolveStyle, seriesColor } from '../../svg/theme.js';
+import { ROUNDED, classNames, resolveStyle, seriesColor } from '../../svg/theme.js';
 import { layoutLabel, type Label } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
 import type { RenderOptions, Rendered } from '../../types.js';
@@ -96,7 +96,7 @@ export function renderQuadrant(model: QuadrantModel, config: Config, options: Re
     taken.push(cx - text.width / 2, cy - text.height / 2, cx + text.width / 2, cy + text.height / 2);
     quadrants +=
       `<g class="pele-quadrant" data-id="${k + 1}">` +
-      `<rect x="${num(x)}" y="${num(y)}" width="${num(tileW)}" height="${num(tileH)}" rx="${RADIUS}"/>` +
+      `<rect x="${num(x)}" y="${num(y)}" width="${num(tileW)}" height="${num(tileH)}"${ROUNDED}/>` +
       labelSvg(text, cx, cy, ' class="pele-label" fill="var(--_fg)" stroke="none"') +
       '</g>';
   }

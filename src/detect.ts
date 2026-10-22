@@ -34,44 +34,59 @@ export type DiagramType =
   | 'eventmodeling';
 
 // Mermaid's detectors, in the order Mermaid registers them. The first match wins.
-const DETECTORS: readonly (readonly [DiagramType, RegExp])[] = [
-  ['flowchart', /^\s*flowchart-elk/],
-  ['mindmap', /^\s*mindmap/],
-  ['architecture', /^\s*architecture/],
-  ['agentflow', /^\s*agentflow-beta\b/],
-  ['c4', /^\s*C4Context|C4Container|C4Component|C4Dynamic|C4Deployment/],
-  ['kanban', /^\s*kanban/],
-  ['class', /^\s*classDiagram/],
-  ['er', /^\s*erDiagram/],
-  ['gantt', /^\s*gantt/],
-  ['info', /^\s*info/],
-  ['pie', /^\s*pie/],
-  ['requirement', /^\s*requirement(Diagram)?/],
-  ['sequence', /^\s*sequenceDiagram/],
-  ['swimlane', /^\s*swimlane-beta\b/],
-  ['flowchart', /^\s*(graph|flowchart)/],
-  ['timeline', /^\s*timeline/],
-  ['gitGraph', /^\s*gitGraph/],
-  ['state', /^\s*stateDiagram/],
-  ['journey', /^\s*journey/],
-  ['quadrantChart', /^\s*quadrantChart/],
-  ['sankey', /^\s*sankey(-beta)?/],
-  ['packet', /^\s*packet(-beta)?/],
-  ['xychart', /^\s*xychart(-beta)?/],
-  ['block', /^\s*block(-beta)?/],
-  ['eventmodeling', /^\s*eventmodeling/],
-  ['treeView', /^\s*treeView-beta/],
-  ['radar', /^\s*radar-beta/],
-  ['ishikawa', /^\s*ishikawa(-beta)?\b/i],
-  ['treemap', /^\s*treemap/],
-  ['railroad', /^\s*railroad-(?:ebnf-|abnf-|peg-)?beta/i],
-  ['venn', /^\s*venn-beta/],
-  ['wardley', /^\s*wardley-beta/i],
-  ['cynefin', /^\s*cynefin-beta(?:[\s:]|$)/],
-  ['usecase', /^\s*usecase-beta(?:\s|$)/],
-];
+const DETECTORS = [
+  ['flowchart', 'flowchart-elk', /^\s*flowchart-elk/],
+  ['mindmap', 'mindmap', /^\s*mindmap/],
+  ['architecture', 'architecture', /^\s*architecture/],
+  ['agentflow', 'agentflow', /^\s*agentflow-beta\b/],
+  ['c4', 'c4', /^\s*C4Context|C4Container|C4Component|C4Dynamic|C4Deployment/],
+  ['kanban', 'kanban', /^\s*kanban/],
+  ['class', 'classDiagram', /^\s*classDiagram/],
+  ['er', 'er', /^\s*erDiagram/],
+  ['gantt', 'gantt', /^\s*gantt/],
+  ['info', 'info', /^\s*info/],
+  ['pie', 'pie', /^\s*pie/],
+  ['requirement', 'requirement', /^\s*requirement(Diagram)?/],
+  ['sequence', 'sequence', /^\s*sequenceDiagram/],
+  ['swimlane', 'swimlane', /^\s*swimlane-beta\b/],
+  ['flowchart', 'flowchart-v2', /^\s*(graph|flowchart)/],
+  ['timeline', 'timeline', /^\s*timeline/],
+  ['gitGraph', 'gitGraph', /^\s*gitGraph/],
+  ['state', 'stateDiagram', /^\s*stateDiagram/],
+  ['journey', 'journey', /^\s*journey/],
+  ['quadrantChart', 'quadrantChart', /^\s*quadrantChart/],
+  ['sankey', 'sankey', /^\s*sankey(-beta)?/],
+  ['packet', 'packet', /^\s*packet(-beta)?/],
+  ['xychart', 'xychart', /^\s*xychart(-beta)?/],
+  ['block', 'block', /^\s*block(-beta)?/],
+  ['eventmodeling', 'eventmodeling', /^\s*eventmodeling/],
+  ['treeView', 'treeView', /^\s*treeView-beta/],
+  ['radar', 'radar', /^\s*radar-beta/],
+  ['ishikawa', 'ishikawa', /^\s*ishikawa(-beta)?\b/i],
+  ['treemap', 'treemap', /^\s*treemap/],
+  ['railroad', 'railroad', /^\s*railroad-beta/i],
+  ['railroad', 'railroadEbnf', /^\s*railroad-ebnf-beta/i],
+  ['railroad', 'railroadAbnf', /^\s*railroad-abnf-beta/i],
+  ['railroad', 'railroadPeg', /^\s*railroad-peg-beta/i],
+  ['venn', 'venn', /^\s*venn-beta/],
+  ['wardley', 'wardley', /^\s*wardley-beta/i],
+  ['cynefin', 'cynefin', /^\s*cynefin-beta(?:[\s:]|$)/],
+  ['usecase', 'usecase', /^\s*usecase-beta(?:\s|$)/],
+] as const satisfies readonly (readonly [DiagramType, string, RegExp])[];
+
+// The diagram type as Mermaid reports it, such as `flowchart-v2` for `graph TD`.
+export type MermaidType = (typeof DETECTORS)[number][1];
+
+export interface Detected {
+  type: DiagramType;
+  mermaidType: MermaidType;
+}
+
+export function detectDiagram(cleaned: string): Detected | null {
+  for (const [type, mermaidType, re] of DETECTORS) if (re.test(cleaned)) return { type, mermaidType };
+  return null;
+}
 
 export function detect(cleaned: string): DiagramType | null {
-  for (const [type, re] of DETECTORS) if (re.test(cleaned)) return type;
-  return null;
+  return detectDiagram(cleaned)?.type ?? null;
 }

@@ -1,7 +1,7 @@
 import type { Config } from '../../preprocess.js';
 import { esc, labelSvg, num } from '../../svg/builder.js';
 import { svgDocument } from '../../svg/root.js';
-import { RADIUS } from '../../svg/theme.js';
+import { ROUNDED } from '../../svg/theme.js';
 import { decodeEntities } from '../../text/entities.js';
 import { layoutLabel } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
@@ -111,7 +111,7 @@ function draw(model: PacketModel, config: Config, options: RenderOptions, down: 
       const text = down ? undefined : fit(block.label, w - 6);
       fields +=
         `<g class="pele-node" data-id="${block.start}-${block.end}">` +
-        `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(rowHeight)}" rx="${RADIUS}" fill="var(--_s)" stroke="var(--_b)"/>` +
+        `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(rowHeight)}" fill="var(--_s)" stroke="var(--_b)"${ROUNDED}/>` +
         (down ? labelSvg(labels.get(block)!, x + w / 2, y + rowHeight / 2, '') : text && text.size <= rowHeight
           ? `<text x="${num(x + w / 2)}" y="${num(y + rowHeight / 2 + text.size * 0.35)}"${
               text.size === labelSize ? '' : ` font-size="${num(text.size)}"`

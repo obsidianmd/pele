@@ -2,7 +2,7 @@ import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num } from '../../svg/builder.js';
 import { marker, markerTrim } from '../../svg/edges.js';
 import { svgDocument } from '../../svg/root.js';
-import { FONT_MONO, RADIUS, seriesColor } from '../../svg/theme.js';
+import { FONT_MONO, ROUNDED, seriesColor } from '../../svg/theme.js';
 import { decodeEntities } from '../../text/entities.js';
 import { breakLabel, leftLabelSvg, literalLabel } from '../common/literal-label.js';
 import { layoutLabel, type Label } from '../../text/label.js';
@@ -138,7 +138,7 @@ function draw(model: EventModelingModel, _config: Config, options: RenderOptions
     band.h += 2 * LANE_PAD;
     lanes +=
       `<g class="pele-cluster pele-em-lane" data-id="${escText(band.lane.label)}">` +
-      `<rect x="${num(left)}" y="${num(y)}" width="${num(laneWidth)}" height="${num(band.h)}" rx="${RADIUS}" fill="var(--_s)"/>` +
+      `<rect x="${num(left)}" y="${num(y)}" width="${num(laneWidth)}" height="${num(band.h)}" fill="var(--_s)"${ROUNDED}/>` +
       labelSvg(band.label, left + LANE_PAD + band.label.width / 2, y + band.h / 2, ` class="pele-cluster-label" font-size="${small}" font-weight="var(--_hw)" fill="var(--_m)"`) +
       '</g>';
     y += band.h + LANE_GAP;
@@ -151,11 +151,11 @@ function draw(model: EventModelingModel, _config: Config, options: RenderOptions
     item.x += left + labelColumn;
     item.y = band.y + (band.h - item.h) / 2;
     const series = SERIES.get(item.box.kind);
-    const frame = `x="${num(item.x)}" y="${num(item.y)}" width="${num(item.w)}" height="${num(item.h)}" rx="${RADIUS}"`;
+    const frame = `x="${num(item.x)}" y="${num(item.y)}" width="${num(item.w)}" height="${num(item.h)}"`;
     const shape =
       series === undefined
-        ? `<rect ${frame} fill="var(--_bg)" stroke="var(--_b)"/>`
-        : `<rect ${frame} fill="var(--_bg)"/><rect ${frame} fill="${seriesColor(series)}" fill-opacity="0.22" stroke="${seriesColor(series)}"/>`;
+        ? `<rect ${frame} fill="var(--_bg)" stroke="var(--_b)"${ROUNDED}/>`
+        : `<rect ${frame} fill="var(--_bg)"${ROUNDED}/><rect ${frame} fill="${seriesColor(series)}" fill-opacity="0.22" stroke="${seriesColor(series)}"${ROUNDED}/>`;
     const nameY = item.y + BOX_PAD_Y + item.name.height / 2;
     const text =
       labelSvg(item.name, item.x + item.w / 2, nameY, ` class="pele-label" font-size="${nameSize}" font-weight="var(--_hw)"`) +
@@ -218,7 +218,7 @@ function draw(model: EventModelingModel, _config: Config, options: RenderOptions
     const cy = bottom + (cards === '' && bands.size === 0 ? 0 : CARD_GAP);
     cards +=
       `<g class="pele-em-${kind}" data-id="${escText(frame)}">` +
-      `<rect x="${num(left)}" y="${num(cy)}" width="${num(w)}" height="${num(h)}" rx="${RADIUS}" fill="var(--_bg)" stroke="var(--_b)"/>` +
+      `<rect x="${num(left)}" y="${num(cy)}" width="${num(w)}" height="${num(h)}" fill="var(--_bg)" stroke="var(--_b)"${ROUNDED}/>` +
       labelSvg(head, left + BOX_PAD_X + head.width / 2, cy + BOX_PAD_Y + head.height / 2, ` font-size="${small}" font-weight="var(--_hw)"`) +
       lines(rows, left + BOX_PAD_X, cy + BOX_PAD_Y + head.height + smallStep / 2 + small * 0.35, smallStep, ` font-size="${small}"`) +
       '</g>';
@@ -305,11 +305,11 @@ function verticalEventModel(model: EventModelingModel, options: RenderOptions): 
     const h = 2 * BOX_PAD_Y + name.height + (data ? data.height + 6 : 0);
     const series = SERIES.get(box.kind);
     const cy = y + headH;
-    const frame = `x="${num(pad)}" y="${num(cy)}" width="${num(w)}" height="${num(h)}" rx="${RADIUS}"`;
+    const frame = `x="${num(pad)}" y="${num(cy)}" width="${num(w)}" height="${num(h)}"`;
     nodes += `<g class="pele-cluster pele-em-lane" data-id="${escText(box.lane.label)}">` +
       leftLabelSvg(lane, pad + BOX_PAD_X, y, ` class="pele-cluster-label" font-size="${small}" font-weight="var(--_hw)" fill="var(--_m)"`) +
-      `<g class="pele-node pele-em-${box.kind}${box.reset ? ' pele-em-reset' : ''}" data-id="${escText(box.id)}"><rect ${frame} fill="var(--_bg)" stroke="var(--_b)"/>` +
-      (series === undefined ? '' : `<rect ${frame} fill="${seriesColor(series)}" fill-opacity="0.22" stroke="${seriesColor(series)}"/>`) +
+      `<g class="pele-node pele-em-${box.kind}${box.reset ? ' pele-em-reset' : ''}" data-id="${escText(box.id)}"><rect ${frame} fill="var(--_bg)" stroke="var(--_b)"${ROUNDED}/>` +
+      (series === undefined ? '' : `<rect ${frame} fill="${seriesColor(series)}" fill-opacity="0.22" stroke="${seriesColor(series)}"${ROUNDED}/>`) +
       labelSvg(name, pad + BOX_PAD_X + name.width / 2, cy + BOX_PAD_Y + name.height / 2, ` class="pele-label" font-size="${small}" font-weight="var(--_hw)"`) +
       `<text class="pele-em-frame" x="${num(pad + w - BOX_PAD_X)}" y="${num(cy + BOX_PAD_Y + small)}" text-anchor="end" font-size="${mono}" fill="var(--_m)">${esc(box.id)}</text>` +
       (data ? lines(data.lines.map(line => line.map(span => span.text).join('')), pad + BOX_PAD_X, cy + BOX_PAD_Y + name.height + 6 + data.lineHeight / 2 + mono * 0.35, data.lineHeight, ` class="pele-em-data" font-family="${FONT_MONO}" font-size="${mono}"`) : '') + '</g></g>';
@@ -346,7 +346,7 @@ function verticalEventModel(model: EventModelingModel, options: RenderOptions): 
     const body = text(raw, small);
     const w = Math.max(cardWidth, head.width + 2 * BOX_PAD_X, body.width + 2 * BOX_PAD_X);
     const h = 2 * BOX_PAD_Y + head.height + body.height;
-    cards += `<g class="pele-em-${kind}" data-id="${escText(frame)}"><rect x="${num(pad)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="${RADIUS}" fill="var(--_bg)" stroke="var(--_b)"/>` +
+    cards += `<g class="pele-em-${kind}" data-id="${escText(frame)}"><rect x="${num(pad)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" fill="var(--_bg)" stroke="var(--_b)"${ROUNDED}/>` +
       labelSvg(head, pad + BOX_PAD_X + head.width / 2, y + BOX_PAD_Y + head.height / 2, ` font-size="${small}" font-weight="var(--_hw)"`) +
       lines(body.lines.map(line => line.map(span => span.text).join('')), pad + BOX_PAD_X, y + BOX_PAD_Y + head.height + body.lineHeight / 2 + small * 0.35, body.lineHeight, ` font-size="${small}"`) + '</g>';
     bottom = y + h;

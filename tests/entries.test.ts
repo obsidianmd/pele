@@ -19,7 +19,7 @@ describe('core without the full entry point', () => {
     try {
       core.render(FLOW);
     } catch (error) {
-      expect((error as InstanceType<typeof core.PeleError>).code).toBe('unsupported-diagram');
+      expect(error).toMatchObject({ code: 'unsupported-diagram', type: 'flowchart', mermaidType: 'flowchart-v2' });
     }
   });
 
@@ -37,6 +37,7 @@ describe('core without the full entry point', () => {
     expect(lazy.supports(PIE)).toBe(false);
     const result = await lazy.renderAsync(PIE);
     expect(result.type).toBe('pie');
+    expect(result.mermaidType).toBe('pie');
     expect(lazy.supports(PIE)).toBe(true);
     expect(lazy.supports(FLOW)).toBe(false);
     expect(await lazy.load('flowchart')).toBe(true);

@@ -93,6 +93,28 @@ describe('timeline rendering', () => {
     expect(Number(rects[1].attrs.get('x'))).toBeGreaterThan(Number(rects[0].attrs.get('x')));
   });
 
+  it('runs the line from a period to its first event straight, TD, whichever box is taller', () => {
+    const source = 'timeline TD\n  2002 : LinkedIn\n  2004 : Facebook : Google\n  2005<br>and on<br>and on : YouTube\n  2006 : first<br>second<br>third<br>fourth\n';
+    const { svg } = render(source, options);
+    const box = (rect: string): { top: number; bottom: number; middle: number } => {
+      const [, y, h] = rect.match(/ y="([\d.]+)" width="[\d.]+" height="([\d.]+)"/) ?? [];
+      return { top: Number(y), bottom: Number(y) + Number(h), middle: Number(y) + Number(h) / 2 };
+    };
+    const rows = svg.split('<g class="pele-node pele-period"').slice(1);
+    expect(rows).toHaveLength(4);
+    let above = 0;
+    for (const row of rows) {
+      const boxes = (row.match(/<rect [^>]+>/g) ?? []).map(box);
+      const [period, event] = boxes;
+      expect(event.middle).toBe(period.middle);
+      const path = row.match(/class="pele-edge" d="([^"]+)"/)?.[1] ?? '';
+      const stubs = [...path.matchAll(/M[\d.]+,([\d.]+)H/g)].slice(0, 2).map((m) => Number(m[1]));
+      expect(stubs).toEqual([period.middle, period.middle]);
+      expect(Math.min(...boxes.map((b) => b.top))).toBeGreaterThan(above);
+      above = Math.max(...boxes.map((b) => b.bottom));
+    }
+  });
+
   it('breaks lines at <br> and wraps long text to the column', () => {
     const one = render('timeline\n  2001 : first second\n', options);
     const two = render('timeline\n  2001 : first<br>second\n', options);

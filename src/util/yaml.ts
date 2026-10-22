@@ -24,7 +24,7 @@ class Reader {
   i = 0;
 
   constructor(src: string) {
-    this.lines = src.replace(/\r\n?/g, '\n').split('\n');
+    this.lines = (src.includes('\r') ? src.replace(/\r\n?/g, '\n') : src).split('\n');
   }
 
   skipBlank(): void {
@@ -98,6 +98,8 @@ function scalar(raw: string): YamlValue {
   if (s === '' || s === '~' || s === 'null' || s === 'Null' || s === 'NULL') return null;
   if (s === 'true' || s === 'True' || s === 'TRUE') return true;
   if (s === 'false' || s === 'False' || s === 'FALSE') return false;
+  const c = s[0];
+  if (c !== '-' && c !== '+' && c !== '.' && (c < '0' || c > '9')) return s;
   if (RE_INT.test(s) || RE_FLOAT.test(s)) return Number(s);
   if (RE_HEX.test(s) || RE_OCT.test(s) || RE_BIN.test(s)) {
     const neg = s[0] === '-';
@@ -148,6 +150,7 @@ function fold(text: string): string {
 }
 
 function unquoteDouble(body: string): string {
+  if (!body.includes('\\')) return fold(body);
   let out = '';
   const s = fold(body.replace(/\\\n[ \t]*/g, ''));
   for (let i = 0; i < s.length; i++) {

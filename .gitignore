@@ -1,8 +1,15 @@
-AGENTS.md
 node_modules/
 dist/
+
+# Local state
 .wrangler/
+tests/scratch/
+
+# System
 .DS_Store
 *.log
-tests/scratch/
+
+# AI
 .claude/
+.cursor/
+.codex/

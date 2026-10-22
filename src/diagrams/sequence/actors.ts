@@ -1,5 +1,5 @@
 import { labelSvg, num, type IconResolver } from '../../svg/builder.js';
-import { RADIUS } from '../../svg/theme.js';
+import { ROUNDED } from '../../svg/theme.js';
 import type { Label } from '../../text/label.js';
 
 const PAD_X = 16;
@@ -91,8 +91,8 @@ export function drawActor(
   if (kind === 'collections') {
     const bw = w - STACK;
     const bh = h - STACK;
-    const back = `<rect x="${num(left + STACK)}" y="${num(top)}" width="${num(bw)}" height="${num(bh)}" rx="${RADIUS}"${SHAPE}/>`;
-    const front = `<rect x="${num(left)}" y="${num(top + STACK)}" width="${num(bw)}" height="${num(bh)}" rx="${RADIUS}"${SHAPE}/>`;
+    const back = `<rect x="${num(left + STACK)}" y="${num(top)}" width="${num(bw)}" height="${num(bh)}"${SHAPE}${ROUNDED}/>`;
+    const front = `<rect x="${num(left)}" y="${num(top + STACK)}" width="${num(bw)}" height="${num(bh)}"${SHAPE}${ROUNDED}/>`;
     return back + front + labelSvg(label, left + bw / 2, top + STACK + bh / 2, text, icons);
   }
   if (kind === 'queue') {
@@ -107,7 +107,7 @@ export function drawActor(
     );
   }
   return (
-    `<rect x="${num(left)}" y="${num(top)}" width="${num(w)}" height="${num(h)}" rx="${RADIUS}"${SHAPE}/>` +
+    `<rect x="${num(left)}" y="${num(top)}" width="${num(w)}" height="${num(h)}"${SHAPE}${ROUNDED}/>` +
     labelSvg(label, cx, top + h / 2, text, icons)
   );
 }

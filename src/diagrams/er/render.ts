@@ -1,11 +1,12 @@
 import { cnode, compoundLayout, direction, shiftLayout, type CEdge, type CNode } from '../../layout/compound.js';
+import { titleLabel } from '../../svg/title.js';
 import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num, sharedStyle, spanStyle, textStyle, type IconResolver } from '../../svg/builder.js';
 import { clusterTitleX, markCrossings, type Crossings } from '../../svg/cluster.js';
 import { edgeLabelSvg, routePath } from '../../svg/edges.js';
 import { svgDocument } from '../../svg/root.js';
-import { RADIUS, classNames, resolveStyle, type ResolvedStyle } from '../../svg/theme.js';
-import { layoutLabel, type Label } from '../../text/label.js';
+import { ROUNDED, classNames, resolveStyle, rounded, type ResolvedStyle } from '../../svg/theme.js';
+import { hasMath, labelLine, layoutLabel, lineMiddle, type Label } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
 import { decodeEntities } from '../../text/entities.js';
 import { linkUrl, relAttr, sanitizeUrl } from '../../util/url.js';
@@ -76,13 +77,23 @@ interface Loop {
 function textLeft(label: Label, x: number, y: number, attrs: string, icons: IconResolver | undefined): string {
   const lines = label.lines;
   if (lines.length === 0) return '';
-  if (lines.length === 1 && lines[0].length === 1 && lines[0][0].icon === undefined && lines[0][0].style === 0) {
-    return `<text${attrs} x="${num(x)}" y="${num(y)}">${esc(lines[0][0].text)}</text>`;
+  const only = lines.length === 1 && lines[0].length === 1 ? lines[0][0] : undefined;
+  if (only && only.icon === undefined && only.math === undefined && only.style === 0) {
+    return `<text${attrs} x="${num(x)}" y="${num(y)}">${esc(only.text)}</text>`;
   }
   const shared = sharedStyle(label);
+  const shift = label.size * 0.35;
+  const top = y - shift - label.lineHeight / 2;
   let body = '';
   let extra = '';
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const middle = top + lineMiddle(label, i);
+    if (hasMath(line)) {
+      extra += labelSvg(labelLine(label, i), x + label.widths[i] / 2, middle, attrs, icons);
+      continue;
+    }
+    y = middle + shift;
     let hasIcon = false;
     for (const span of line) if (span.icon !== undefined) hasIcon = true;
     let sx = x;
@@ -102,7 +113,6 @@ function textLeft(label: Label, x: number, y: number, attrs: string, icons: Icon
       }
       sx += span.width;
     }
-    y += label.lineHeight;
   }
   return `<text${textStyle(attrs, shared)} xml:space="preserve">${body}</text>${extra}`;
 }
@@ -286,7 +296,7 @@ function draw(db: ErDb, config: Config, options: RenderOptions, turned: boolean)
     layoutWidth = Math.max(layoutWidth, c.x + c.w / 2 + MARKER_LENGTH + LOOP * 0.75 + 10 + reach);
   }
 
-  const title = layoutLabel(db.title, false, measurer, size, 4000, Style.Bold);
+  const title = titleLabel(db.title, measurer, size, 4000);
   const titleHeight = title.height > 0 ? title.height + 12 : 0;
   const inner = Math.max(layoutWidth, title.width);
   const ox = pad + (inner - layoutWidth) / 2;
@@ -318,7 +328,7 @@ function draw(db: ErDb, config: Config, options: RenderOptions, turned: boolean)
       const titleX = clusterTitleX(c, view.label.width, crossings, GROUP_PAD);
       clusters +=
         `<g class="pele-cluster${classes}" data-id="${escText(node.id)}">` +
-        `<rect x="${num(x)}" y="${num(y)}" width="${num(c.w)}" height="${num(c.h)}" rx="${RADIUS}" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)"${view.style.shape}/>` +
+        `<rect x="${num(x)}" y="${num(y)}" width="${num(c.w)}" height="${num(c.h)}" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)"${rounded(view.style.shape)}/>` +
         labelSvg(view.label, titleX, y + 8 + view.label.height / 2, ` class="pele-cluster-label" fill="var(--_m)"${view.style.text}`, icons) +
         '</g>';
       continue;
@@ -329,7 +339,7 @@ function draw(db: ErDb, config: Config, options: RenderOptions, turned: boolean)
     const x0 = -w / 2;
     const y0 = -h / 2;
     const text = view.style.text;
-    const shape = `x="${num(x0)}" y="${num(y0)}" width="${num(w)}" height="${num(h)}" rx="${RADIUS}"`;
+    const shape = `x="${num(x0)}" y="${num(y0)}" width="${num(w)}" height="${num(h)}"`;
     let name = labelSvg(view.label, 0, view.rows.length > 0 ? y0 + view.headH / 2 : 0, ` class="pele-label"${text}`, icons);
     const display = decodeEntities(node.alias || node.label);
     if (/ internal-link(?: |$)/.test(classes + ' ') && name !== '' && options.links !== false) {
@@ -342,7 +352,7 @@ function draw(db: ErDb, config: Config, options: RenderOptions, turned: boolean)
 
     let body: string;
     if (view.rows.length === 0) {
-      body = `<rect ${shape}${BOX_ATTRS}${view.style.shape}/>` + name;
+      body = `<rect ${shape}${rounded(BOX_ATTRS + view.style.shape)}/>` + name;
     } else {
       const rowLine = Math.round(view.rowSize * 1.5);
       const lineColor = view.style.stroke ? esc(view.style.stroke) : 'var(--_b)';
@@ -356,7 +366,7 @@ function draw(db: ErDb, config: Config, options: RenderOptions, turned: boolean)
           if (r === view.rows.length - 1) {
             // The last row follows the box's rounded bottom corners: a rounded rect, squared off on top.
             stripes +=
-              `<rect ${span} y="${num(y)}" height="${num(row.h)}" rx="${RADIUS}"/>` +
+              `<rect ${span} y="${num(y)}" height="${num(row.h)}"${ROUNDED}/>` +
               `<rect ${span} y="${num(y)}" height="${num(row.h / 2)}"/>`;
           } else {
             stripes += `<rect ${span} y="${num(y)}" height="${num(row.h)}"/>`;
@@ -373,12 +383,12 @@ function draw(db: ErDb, config: Config, options: RenderOptions, turned: boolean)
       }
       const dividerY = num(y0 + view.headH);
       body =
-        `<rect ${shape}${BOX_ATTRS}${view.style.shape}/>` +
+        `<rect ${shape}${rounded(BOX_ATTRS + view.style.shape)}/>` +
         // Over a fill the diagram chose, the shading is a tint of that fill. The opacity is on the
         // group because the two parts of the last row overlap.
         `<g class="pele-er-stripes" fill="var(--_bg)"${view.style.shape.includes('fill:') ? ' opacity="0.6"' : ''}>${stripes}</g>` +
         `<path class="pele-er-divider" d="M${num(x0)},${dividerY}H${num(x0 + w)}" stroke="${lineColor}"/>` +
-        `<rect ${shape} fill="none" stroke="var(--_b)"${view.style.line}/>` +
+        `<rect ${shape} fill="none" stroke="var(--_b)"${rounded(view.style.line)}/>` +
         name +
         `<g class="pele-er-attributes" font-size="${view.rowSize}">${cells}</g>`;
     }

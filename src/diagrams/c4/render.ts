@@ -5,7 +5,7 @@ import { esc, escText, labelSvg, num } from '../../svg/builder.js';
 import { ARROW, marker, markerTrim } from '../../svg/edges.js';
 import { svgDocument } from '../../svg/root.js';
 import { drawShape } from '../../svg/shapes.js';
-import { RADIUS, resolveStyle, type ResolvedStyle } from '../../svg/theme.js';
+import { resolveStyle, rounded, type ResolvedStyle } from '../../svg/theme.js';
 import { layoutLabel } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
 import type { LinkInfo, RenderOptions, Rendered } from '../../types.js';
@@ -231,9 +231,9 @@ function draw(db: C4Db, _config: Config, options: RenderOptions, tight: boolean,
       text += leftLabelSvg(group.labels[2], x, y, ` class="pele-c4-descr" font-size="${small}" fill="var(--_m)"${style.text}`);
       clusters +=
         `<g class="pele-cluster pele-c4-${boundary.nodeType ? 'node' : 'boundary'}" data-id="${escText(boundary.alias)}">` +
-        `<rect x="${num(group.x)}" y="${num(group.y)}" width="${num(group.w)}" height="${num(group.h)}" rx="${RADIUS}" fill="none" stroke="var(--_b)"${
+        `<rect x="${num(group.x)}" y="${num(group.y)}" width="${num(group.w)}" height="${num(group.h)}" fill="none" stroke="var(--_b)"${
           boundary.nodeType ? '' : ' stroke-dasharray="6 4"'
-        }${style.shape}/>` +
+        }${rounded(style.shape)}/>` +
         link(text, boundary.link, boundary.alias, links, options) +
         '</g>';
     }

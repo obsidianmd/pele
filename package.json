@@ -1,6 +1,6 @@
 {
   "name": "pele",
-  "version": "1.6.0",
+  "version": "1.8.0",
   "description": "A fast, lightweight Mermaid renderer that outputs themeable SVG.",
   "license": "MIT",
   "author": "kepano",
@@ -63,6 +63,7 @@
     "prepublishOnly": "npm run typecheck && npm test && npm run build",
     "test:watch": "vitest --exclude \"tests/website/**\"",
     "bench": "node scripts/bench.mjs",
+    "bench:mermaid": "node scripts/bench-mermaid.mjs",
     "website": "cd website && pnpm dev"
   },
   "engines": {

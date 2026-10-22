@@ -1,6 +1,6 @@
 import type { CNode } from '../layout/compound.js';
 import { num } from './builder.js';
-import { RADIUS } from './theme.js';
+import { rounded } from './theme.js';
 
 export interface ShapeSize {
   w: number;
@@ -78,10 +78,8 @@ function rect(w: number, h: number, a: string, rx = ''): string {
   return `<rect x="${num(-w / 2)}" y="${num(-h / 2)}" width="${num(w)}" height="${num(h)}"${rx}${a}/>`;
 }
 
-const ROUNDED = ` rx="${RADIUS}"`;
-
 const SHAPES: Record<string, ShapeDef> = {
-  rect: { size: box, span: flat, draw: (w, h, a) => rect(w, h, a, ROUNDED) },
+  rect: { size: box, span: flat, draw: (w, h, a) => rect(w, h, rounded(a)) },
   rounded: {
     size: box,
     span: flat,
@@ -102,7 +100,7 @@ const SHAPES: Record<string, ShapeDef> = {
     draw: (w, h, a, line) => {
       const x = w / 2 - 8;
       return (
-        rect(w, h, a, ROUNDED) +
+        rect(w, h, rounded(a)) +
         `<path d="M${num(-x)},${num(-h / 2)}V${num(h / 2)}M${num(x)},${num(-h / 2)}V${num(h / 2)}" fill="none"${line}/>`
       );
     },
@@ -277,21 +275,21 @@ const SHAPES: Record<string, ShapeDef> = {
     span: flat,
     size: (tw, th) => ({ w: tw + 2 * PAD_X + 8, h: th + 2 * PAD_Y, dy: 0 }),
     draw: (w, h, a, line) =>
-      rect(w, h, a, ROUNDED) +
+      rect(w, h, rounded(a)) +
       `<path d="M${num(-w / 2 + 8)},${num(-h / 2)}V${num(h / 2)}" fill="none"${line}/>`,
   },
   'div-rect': {
     span: flat,
     size: (tw, th) => ({ w: tw + 2 * PAD_X, h: th + 2 * PAD_Y + 8, dy: 4 }),
     draw: (w, h, a, line) =>
-      rect(w, h, a, ROUNDED) +
+      rect(w, h, rounded(a)) +
       `<path d="M${num(-w / 2)},${num(-h / 2 + 8)}H${num(w / 2)}" fill="none"${line}/>`,
   },
   'win-pane': {
     span: flat,
     size: (tw, th) => ({ w: tw + 2 * PAD_X + 8, h: th + 2 * PAD_Y + 8, dy: 4 }),
     draw: (w, h, a, line) =>
-      rect(w, h, a, ROUNDED) +
+      rect(w, h, rounded(a)) +
       `<path d="M${num(-w / 2 + 8)},${num(-h / 2)}V${num(h / 2)}M${num(-w / 2)},${num(-h / 2 + 8)}H${num(
         w / 2
       )}" fill="none"${line}/>`,
@@ -380,7 +378,7 @@ const SHAPES: Record<string, ShapeDef> = {
       for (let i = 0; i < 3; i++) {
         const x = -w / 2 + (2 - i) * 4;
         const y = -h / 2 + i * 4;
-        out += `<rect x="${num(x)}" y="${num(y)}" width="${num(bw)}" height="${num(bh)}"${ROUNDED}${a}/>`;
+        out += `<rect x="${num(x)}" y="${num(y)}" width="${num(bw)}" height="${num(bh)}"${rounded(a)}/>`;
       }
       return out;
     },
@@ -443,7 +441,7 @@ const SHAPES: Record<string, ShapeDef> = {
     span: flat,
     size: (tw, th) => ({ w: Math.max(tw + 2 * PAD_X, 72), h: th + 2 * PAD_Y + 12, dy: 6 }),
     draw: (w, h, a, line) =>
-      rect(w, h, a, ROUNDED) +
+      rect(w, h, rounded(a)) +
       `<path d="M${num(-w / 2)},${num(-h / 2 + 12)}H${num(w / 2)}M${num(-w / 2 + 7)},${num(-h / 2 + 4)}l3,2.5l-3,2.5M${num(
         -w / 2 + 13
       )},${num(-h / 2 + 9)}h4" fill="none"${line}/>`,
@@ -454,7 +452,7 @@ const SHAPES: Record<string, ShapeDef> = {
     draw: (w, h, a, line) => {
       let dots = '';
       for (let i = 0; i < 3; i++) dots += `<circle cx="${num(-w / 2 + 8 + i * 7)}" cy="${num(-h / 2 + 6)}" r="1.5" fill="none"${line}/>`;
-      return rect(w, h, a, ROUNDED) + `<path d="M${num(-w / 2)},${num(-h / 2 + 12)}H${num(w / 2)}" fill="none"${line}/>` + dots;
+      return rect(w, h, rounded(a)) + `<path d="M${num(-w / 2)},${num(-h / 2 + 12)}H${num(w / 2)}" fill="none"${line}/>` + dots;
     },
   },
   person: {
@@ -591,7 +589,7 @@ const SHAPES: Record<string, ShapeDef> = {
     size: box,
     span: flat,
     draw: (w, h, a, line) =>
-      rect(w, h, a, ROUNDED) +
+      rect(w, h, rounded(a)) +
       `<path d="M${num(w / 2 - 12)},${num(h / 2)}L${num(w / 2)},${num(h / 2 - 12)}" fill="none"${line}/>`,
   },
   'tag-doc': {
@@ -609,8 +607,8 @@ const SHAPES: Record<string, ShapeDef> = {
   collapsedGroup: {
     size: (tw, th) => ({ w: tw + 2 * PAD_X + 8, h: th + 2 * PAD_Y + 8, dy: -2 }),
     draw: (w, h, a) =>
-      `<rect x="${num(-w / 2 + 6)}" y="${num(-h / 2 + 8)}" width="${num(w - 12)}" height="${num(h - 8)}"${ROUNDED}${a}/>` +
-      `<rect x="${num(-w / 2)}" y="${num(-h / 2)}" width="${num(w)}" height="${num(h - 4)}"${ROUNDED}${a}/>`,
+      `<rect x="${num(-w / 2 + 6)}" y="${num(-h / 2 + 8)}" width="${num(w - 12)}" height="${num(h - 8)}"${rounded(a)}/>` +
+      `<rect x="${num(-w / 2)}" y="${num(-h / 2)}" width="${num(w)}" height="${num(h - 4)}"${rounded(a)}/>`,
   },
 };
 

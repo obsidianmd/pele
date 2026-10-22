@@ -3,13 +3,13 @@ title: Security
 description: Render and display untrusted diagrams.
 ---
 
-Pele escapes diagram text, filters links and styles, and limits source and output size. Your app controls icon markup, navigation, and how errors are displayed.
+Pele escapes diagram text, filters links and styles, and limits source and output size. Your app controls icon and math markup, navigation, and how errors are displayed.
 
 ## What the SVG contains
 
 Pele renders diagram source as SVG shapes, text, links, and images. It does not turn diagram source into scripts, event handlers, or HTML labels. JavaScript callbacks in `click` statements are ignored.
 
-Pele filters diagram styles. Your app is responsible for any icon markup it supplies. See [App responsibilities](#app-responsibilities).
+Pele filters diagram styles. Your app is responsible for any icon or math markup it supplies. See [App responsibilities](#app-responsibilities).
 
 ## Links and images
 
@@ -70,6 +70,8 @@ try {
 ```
 
 Supply icons from a set you trust. Pele inserts the markup returned by [`icons`](/api#renderoptions) without filtering. Return nothing for unknown names, and do not insert names into the markup itself.
+
+Pele inserts the markup returned by [`math`](/api#math) without filtering. This markup comes from diagram text, so keep KaTeX's default `trust: false` or load MathJax's `ui/safe` extension. Sanitizers such as DOMPurify remove the `<foreignObject>` that contains HTML math, so if you pass `sanitize` to `mount()`, use a typesetter that produces SVG.
 
 Handle internal links as note names. When an entry in [`links`](/api#renderresult) has `internal: true`, its `href` contains the note name. This value has not been filtered as a URL. Apply your app's navigation policy when opening links.
 

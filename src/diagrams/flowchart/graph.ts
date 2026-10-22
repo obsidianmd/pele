@@ -95,11 +95,12 @@ export function buildFlowGraph(model: FlowchartModel & Pick<FlowDb, 'subgraph'>,
   const subgraphs = model.subgraphs;
 
   const compiled = (classNames: string[]): string[] => {
-    let out: string[] = [];
+    const out: string[] = [];
     for (const name of classNames) {
       const def = model.classes.get(name);
-      if (def?.styles) out = [...out, ...def.styles].map((s) => s.trim());
-      if (def?.textStyles) out = [...out, ...def.textStyles].map((s) => s.trim());
+      if (def === undefined) continue;
+      for (const s of def.styles) out.push(s.trim());
+      for (const s of def.textStyles) out.push(s.trim());
     }
     return out;
   };
@@ -233,7 +234,6 @@ export function buildFlowGraph(model: FlowchartModel & Pick<FlowDb, 'subgraph'>,
       shape: isGroup ? 'rect' : shapeOf(vertex),
     };
     nodes.push(node);
-    byId.set(vertex.id, node);
   }
 
   model.edges.forEach((raw, index) => {

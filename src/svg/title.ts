@@ -1,6 +1,12 @@
-import { layoutLabel } from '../text/label.js';
+import { layoutLabel, type Label } from '../text/label.js';
+import { withoutMath } from '../text/math.js';
 import { Style, type TextMeasurer } from '../text/measurer.js';
 import { labelSvg, num } from './builder.js';
+
+// Mermaid draws diagram titles as text, whatever they hold.
+export function titleLabel(title: string | undefined, measurer: TextMeasurer, size: number, maxWidth: number): Label {
+  return withoutMath(() => layoutLabel(title, false, measurer, size, maxWidth, Style.Bold));
+}
 
 export interface Titled {
   width: number;
@@ -18,7 +24,7 @@ export function withTitle(
   height: number,
   content: string
 ): Titled {
-  const label = layoutLabel(title, false, measurer, size, 4000, Style.Bold);
+  const label = titleLabel(title, measurer, size, 4000);
   if (label.height === 0) return { width, height, content };
   const shift = label.height + 12;
   const full = Math.max(width, Math.ceil(label.width + 2 * pad));

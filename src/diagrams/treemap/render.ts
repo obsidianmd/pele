@@ -1,7 +1,7 @@
 import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num } from '../../svg/builder.js';
 import { svgDocument } from '../../svg/root.js';
-import { RADIUS, classNames, resolveStyle, seriesColor } from '../../svg/theme.js';
+import { classNames, resolveStyle, rounded, seriesColor } from '../../svg/theme.js';
 import { decodeEntities } from '../../text/entities.js';
 import { layoutLabel } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
@@ -57,7 +57,7 @@ export function renderTreemap(model: TreemapModel, config: Config, options: Rend
     const name = decodeEntities(node.name).trim();
     const value = showValues ? format(b.value) : '';
     const group = `data-id="${escText(node.name)}">`;
-    const rect = `<rect x="${num(x)}" y="${num(y)}" width="${num(b.w)}" height="${num(b.h)}" rx="${RADIUS}" fill="${color}"`;
+    const rect = `<rect x="${num(x)}" y="${num(y)}" width="${num(b.w)}" height="${num(b.h)}" fill="${color}"`;
 
     if (node.children !== undefined) {
       let text = '';
@@ -78,7 +78,7 @@ export function renderTreemap(model: TreemapModel, config: Config, options: Rend
       const tint = /[";]fill:/.test(style.shape) ? '' : ' fill-opacity="0.12"';
       sections +=
         `<g class="pele-node pele-section${classNames(node.classSelector ?? '')}" ${group}` +
-        `${rect}${tint} stroke="${color}"${style.shape}/>${text}</g>`;
+        `${rect}${rounded(`${tint} stroke="${color}"${style.shape}`)}/>${text}</g>`;
       continue;
     }
 
@@ -101,7 +101,7 @@ export function renderTreemap(model: TreemapModel, config: Config, options: Rend
         text = `<text x="${cx}" y="${num(cy + label.size * 0.35)}" font-size="${num(label.size)}"${style.text}>${esc(label.text)}</text>`;
       }
     }
-    leaves += `<g class="pele-node pele-leaf${classNames(node.classSelector ?? '')}" ${group}${rect}${style.shape}/>${text}</g>`;
+    leaves += `<g class="pele-node pele-leaf${classNames(node.classSelector ?? '')}" ${group}${rect}${rounded(style.shape)}/>${text}</g>`;
   }
 
   const totalWidth = Math.ceil(Math.max(width, title.width) + 2 * pad);

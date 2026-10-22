@@ -126,6 +126,7 @@ All options are optional.
 | `links` | `boolean` | Enables links. Defaults to `true`. |
 | `images` | `boolean` | Enables images. Defaults to `true`. |
 | `icons` | `(name: string) => string \| null \| undefined` | Supplies trusted SVG markup for icon names such as `fa:fa-car`. See [Security](/security#app-responsibilities). |
+| `math` | `(tex: string, size: number) => MathMarkup \| null \| undefined` | Typesets `$$...$$` in labels. See [Math](#math). |
 | `config` | `object` | Default Mermaid settings. Frontmatter and directives override them. Support varies by diagram type. |
 
 ### RenderResult
@@ -136,6 +137,7 @@ All options are optional.
 | `width` | `number` | Natural width of the diagram in pixels. |
 | `height` | `number` | Height of the diagram in pixels. |
 | `type` | `DiagramType` | The detected diagram type, such as `'flowchart'`. |
+| `mermaidType` | `MermaidType` | The diagram type as Mermaid reports it, such as `'flowchart-v2'`. |
 | `links` | `LinkInfo[]` | Diagram links for attaching navigation handlers. |
 
 Each `LinkInfo` has an `id`, `href`, and `internal` flag. Internal links contain note names in `href`. See [Security](/security#app-responsibilities) before adding link handlers.
@@ -259,10 +261,10 @@ The buttons use the diagram's color variables. Position them with `--pele-zoom-t
 ## parse
 
 ```ts
-function parse(text: string, options?: { limit?: number; maxEdges?: number; config?: object }): DiagramModel
+function parse(text: string, options?: { limit?: number; maxEdges?: number; config?: object }): ParsedDiagramModel
 ```
 
-Returns a model of the diagram. See [`PeleError`](#peleerror) for error handling.
+Returns a model of the diagram, with its `mermaidType`. See [`PeleError`](#peleerror) for error handling.
 
 Parse once to render the diagram at different widths:
 
@@ -281,6 +283,21 @@ function detectType(text: string): DiagramType | null
 ```
 
 Identifies the diagram type. Returns `null` if no type is recognized. The type does not need to be registered.
+
+Pele names a few types differently from Mermaid. `render()`, `parse()` and `PeleError` also give `mermaidType`, the name Mermaid uses:
+
+| Text starts with | `type` | `mermaidType` |
+| --- | --- | --- |
+| `graph`, `flowchart` | `'flowchart'` | `'flowchart-v2'` |
+| `flowchart-elk` | `'flowchart'` | `'flowchart-elk'` |
+| `classDiagram` | `'class'` | `'classDiagram'` |
+| `stateDiagram` | `'state'` | `'stateDiagram'` |
+| `railroad-beta` | `'railroad'` | `'railroad'` |
+| `railroad-ebnf-beta` | `'railroad'` | `'railroadEbnf'` |
+| `railroad-abnf-beta` | `'railroad'` | `'railroadAbnf'` |
+| `railroad-peg-beta` | `'railroad'` | `'railroadPeg'` |
+
+Other types have the same name in both.
 
 ```ts
 detectType('graph TD\n  A --> B');           // 'flowchart'
@@ -311,6 +328,7 @@ Catch `PeleError` to handle parsing and rendering failures. It extends `Error`.
 | `message` | `string` | Description of the problem. Display as text. |
 | `code` | `string` | One of the error codes below. |
 | `type` | `string \| null` | The detected diagram type, when known. |
+| `mermaidType` | `string \| null` | The diagram type as Mermaid reports it, when known. |
 | `line` | `number` | Line of the problem, starting at 1. `0` when the error has no position. |
 | `column` | `number` | Column of the problem, starting at 1. `0` when the error has no position. |
 | `snippet` | `string` | The source line followed by a line that marks the column. Empty when the error has no position. |
@@ -346,3 +364,73 @@ interface TextMeasurer {
   width(text: string, size: number, style: number): number;
 }
 ```
+
+## Math
+
+Pele doesn't include a typesetter, so pass a `math` resolver to typeset `$$...$$` in labels. It typesets the same labels as Mermaid 12.1 in flowchart, swimlane, sequence, state, class, ER, mindmap, kanban, block, requirement, and use case diagrams. As in Mermaid, class members and diagram titles stay as text. If you don't pass a resolver, or it doesn't return markup, labels show the TeX source.
+
+```ts
+type MathResolver = (tex: string, size: number) => MathMarkup | null | undefined;
+
+type MathMarkup =
+  | { svg: string; width: number; height: number }
+  | { html: string; width: number; height: number };
+```
+
+`size` is the label's font size in pixels. Return the expression's width and height in pixels. Pele sizes the label to fit and centers the expression on its line. It calls the resolver on every render, including when a mounted diagram's width changes.
+
+### SVG
+
+Pele inserts SVG markup as is, so it displays anywhere the diagram does, including after sanitizing. With MathJax, load the `ui/safe` extension to remove unsafe links and styles from expressions. Sanitizers remove the `<use>` references in MathJax's font cache, so set `fontCache: 'none'`:
+
+```ts
+window.MathJax = {
+  loader: { load: ['ui/safe'] },
+  svg: { fontCache: 'none' },
+};
+
+// MathJax measures in ex and assumes 1ex is half the font size.
+function math(tex: string, size: number) {
+  let svg: SVGSVGElement | null;
+  try {
+    svg = MathJax.tex2svg(tex, { display: true }).querySelector('svg');
+  } catch {
+    return null;
+  }
+  if (!svg || svg.querySelector('[data-mjx-error]')) return null;
+  const width = (parseFloat(svg.getAttribute('width')) * size) / 2;
+  const height = (parseFloat(svg.getAttribute('height')) * size) / 2;
+  svg.setAttribute('width', String(width));
+  svg.setAttribute('height', String(height));
+  svg.removeAttribute('style');
+  return { svg: svg.outerHTML, width, height };
+}
+```
+
+`tex2svg()` can't wait for MathJax to load an extension or font data, so load the extensions your diagrams use at startup and wait for `MathJax.startup.promise` before rendering. MathJax's SVG doesn't depend on the page's fonts, so you can cache it by TeX and size.
+
+### MathML
+
+Pele wraps MathML returned as `html` in a `<foreignObject>`, which only displays in browsers. Sanitizers such as DOMPurify remove `<foreignObject>`, so return SVG if you pass `sanitize` to [`mount()`](#mount).
+
+KaTeX and Temml both output MathML. Measure each expression on the page. Safari positions KaTeX's HTML incorrectly inside SVG ([WebKit bug 23113](https://bugs.webkit.org/show_bug.cgi?id=23113)), so return only the `<math>` element:
+
+```ts
+const probe = document.createElement('div');
+probe.style.cssText = 'position:absolute;left:-9999px;visibility:hidden;display:inline-block;white-space:nowrap';
+document.body.append(probe);
+
+function math(tex: string, size: number) {
+  try {
+    probe.innerHTML = katex.renderToString(tex, { displayMode: true, output: 'mathml' });
+  } catch {
+    return null;
+  }
+  probe.style.fontSize = `${size}px`;
+  const expression = probe.querySelector('math')!;
+  const { width, height } = expression.getBoundingClientRect();
+  return { html: expression.outerHTML, width, height };
+}
+```
+
+With [Temml](https://temml.org/), replace the `katex.renderToString()` call with `temml.renderToString(tex, { displayMode: true })`.

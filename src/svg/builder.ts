@@ -1,7 +1,7 @@
 import { decodeEntities } from '../text/entities.js';
 import { Style } from '../text/measurer.js';
 import type { Label } from '../text/label.js';
-import type { IconResolver } from '../types.js';
+import type { IconResolver, MathMarkup } from '../types.js';
 
 export type { IconResolver };
 
@@ -49,29 +49,40 @@ export function labelSvg(label: Label, cx: number, cy: number, attrs: string, ic
   const lines = label.lines;
   if (lines.length === 0) return '';
   const lh = label.lineHeight;
+  const heights = label.heights;
   const shift = label.size * 0.35;
-  let y = cy - label.height / 2 + lh / 2 + shift;
+  let top = cy - label.height / 2;
 
-  if (lines.length === 1 && lines[0].length === 1 && lines[0][0].icon === undefined && lines[0][0].style === 0) {
-    return `<text${attrs} x="${num(cx)}" y="${num(y)}" text-anchor="middle">${esc(lines[0][0].text)}</text>`;
+  const only = lines.length === 1 && lines[0].length === 1 ? lines[0][0] : undefined;
+  if (only && only.icon === undefined && only.math === undefined && only.style === 0) {
+    return `<text${attrs} x="${num(cx)}" y="${num(top + lh / 2 + shift)}" text-anchor="middle">${esc(only.text)}</text>`;
   }
 
   const shared = sharedStyle(label);
+  const given = attrs;
+  let math: MathLook | undefined;
   attrs = textStyle(attrs, shared);
   let body = '';
   let extra = '';
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    let hasIcon = false;
-    for (const span of line) if (span.icon !== undefined) hasIcon = true;
-    if (hasIcon) {
+    const h = heights ? heights[i] : lh;
+    const mid = top + h / 2;
+    const y = mid + shift;
+    let placed = false;
+    for (const span of line) if (span.icon !== undefined || span.math) placed = true;
+    if (placed) {
       let x = cx - label.widths[i] / 2;
       for (const span of line) {
-        if (span.icon !== undefined) {
+        if (span.math) {
+          const box = `x="${num(x)}" y="${num(mid - span.math.height / 2)}" width="${num(span.math.width)}" height="${num(span.math.height)}"`;
+          math ??= mathLook(given);
+          extra += math.halo === undefined ? mathSvg(span.math, box, label.size, math.attrs) : `<rect ${box} rx="2" fill="${math.halo}"/>`;
+        } else if (span.icon !== undefined) {
           const side = label.size * 1.1;
           const inner = icons?.(span.icon) ?? '';
           extra += `<svg class="pele-icon" data-icon="${escText(span.icon)}" x="${num(x)}" y="${num(
-            y - shift - side / 2
+            mid - side / 2
           )}" width="${num(side)}" height="${num(side)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
         } else if (span.text !== '') {
           body += `<tspan x="${num(x)}" y="${num(y)}" text-anchor="start"${spanStyle(span.style & ~shared)}>${esc(span.text)}</tspan>`;
@@ -86,16 +97,53 @@ export function labelSvg(label: Label, cx: number, cy: number, attrs: string, ic
       }
       if (line.length === 0) body += `<tspan x="${num(cx)}" y="${num(y)}"> </tspan>`;
     }
-    y += lh;
+    top += h;
   }
   return `<text${attrs} text-anchor="middle" xml:space="preserve">${body}</text>${extra}`;
 }
 
+const RE_FILL = / fill="([^"]*)"/;
+const RE_STROKE = / stroke="([^"]*)"/;
+const RE_STYLE = / style="([^"]*)"/;
+const RE_STYLE_FILL = /(?:^|;)\s*fill:([^;]*)/;
+const RE_STYLE_OPACITY = /(?:^|;)\s*opacity:([^;]*)/;
+
+// Copy only color and opacity to preserve measured math dimensions.
+// Use a solid patch for the cluster title's outline to hide edges behind math.
+interface MathLook {
+  attrs: string;
+  halo?: string;
+}
+
+function mathLook(attrs: string): MathLook {
+  const style = RE_STYLE.exec(attrs)?.[1] ?? '';
+  const fill = (RE_STYLE_FILL.exec(style)?.[1] ?? RE_FILL.exec(attrs)?.[1] ?? '').trim();
+  if (fill === 'none') return { attrs: '', halo: RE_STROKE.exec(attrs)?.[1] ?? 'none' };
+  const opacity = RE_STYLE_OPACITY.exec(style)?.[1].trim();
+  return { attrs: (fill === '' ? '' : ` color="${fill}"`) + (opacity ? ` opacity="${opacity}"` : '') };
+}
+
+// Resolver markup is trusted.
+function mathSvg(math: MathMarkup, box: string, size: number, attrs: string): string {
+  if ('svg' in math) return `<svg class="pele-math" ${box} overflow="visible"${attrs}>${math.svg}</svg>`;
+  return (
+    `<foreignObject class="pele-math" ${box} overflow="visible"${attrs}>` +
+    `<div xmlns="http://www.w3.org/1999/xhtml" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:${num(size)}px;line-height:normal;white-space:nowrap">${math.html}</div>` +
+    '</foreignObject>'
+  );
+}
+
 const BOLD = ' font-weight="var(--_w)"';
 const ITALIC = ' font-style="italic"';
+const SUB = ' baseline-shift="sub" font-size="smaller"';
+const SUP = ' baseline-shift="super" font-size="smaller"';
 
 export function spanStyle(style: number): string {
-  return (style & Style.Bold ? BOLD : '') + (style & Style.Italic ? ITALIC : '');
+  return (
+    (style & Style.Bold ? BOLD : '') +
+    (style & Style.Italic ? ITALIC : '') +
+    (style & Style.Sub ? SUB : style & Style.Sup ? SUP : '')
+  );
 }
 
 // The emphasis every span of a label has. It is written once, on the text element, where a

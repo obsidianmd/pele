@@ -1,7 +1,7 @@
 import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num } from '../../svg/builder.js';
 import { svgDocument } from '../../svg/root.js';
-import { RADIUS, classNames } from '../../svg/theme.js';
+import { ROUNDED, classNames } from '../../svg/theme.js';
 import { decodeEntities } from '../../text/entities.js';
 import { literalLabel, leftLabelSvg } from '../common/literal-label.js';
 import { layoutLabel, type Label } from '../../text/label.js';
@@ -146,7 +146,7 @@ function draw(model: TreeViewModel, config: Config, options: RenderOptions, tigh
       const x = inset + row.x - HIGHLIGHT_OVERHANG;
       inner += `<rect class="pele-tree-highlight" x="${num(x)}" y="${num(top + row.top + 1)}" width="${num(
         totalWidth - inset + HIGHLIGHT_OVERHANG - x
-      )}" height="${num(row.height - 2)}" rx="${RADIUS}" fill="var(--_c)" fill-opacity="0.14"/>`;
+      )}" height="${num(row.height - 2)}" fill="var(--_c)" fill-opacity="0.14"${ROUNDED}/>`;
     }
     if (row.icon !== undefined) {
       const name = row.icon.startsWith(BUILTIN_PACK + ':') ? row.icon.slice(BUILTIN_PACK.length + 1) : '';

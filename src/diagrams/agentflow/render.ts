@@ -5,7 +5,7 @@ import { clusterTitleX, markCrossings, type Crossings } from '../../svg/cluster.
 import { edgeLabelSvg, loopPath, marker, markerTrim, routePath, type EdgePath } from '../../svg/edges.js';
 import { svgDocument } from '../../svg/root.js';
 import { PAD_X, PAD_Y, drawShape, insetRoute, shapeSize } from '../../svg/shapes.js';
-import { RADIUS, classNames, resolveStyle, seriesColor, type ResolvedStyle } from '../../svg/theme.js';
+import { classNames, resolveStyle, rounded, seriesColor, type ResolvedStyle } from '../../svg/theme.js';
 import { layoutLabel, type Label } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
 import { decodeEntities } from '../../text/entities.js';
@@ -292,11 +292,9 @@ function draw(db: AgentflowDb, config: Config, options: RenderOptions, turned: b
       const titleX = clusterTitleX(c, view.label.width, crossings, GROUP_PAD);
       clusters +=
         `<g class="pele-cluster pele-flow${classes}" data-id="${id}">` +
-        `<rect x="${num(x - c.w / 2)}" y="${num(y - c.h / 2)}" width="${num(c.w)}" height="${num(c.h)}" rx="${RADIUS}"${tint(
-          node.colorIndex ?? KIND_SLOT.size,
-          '0.06',
-          view.style
-        )}${view.style.shape}/>` +
+        `<rect x="${num(x - c.w / 2)}" y="${num(y - c.h / 2)}" width="${num(c.w)}" height="${num(c.h)}"${rounded(
+          tint(node.colorIndex ?? KIND_SLOT.size, '0.06', view.style) + view.style.shape
+        )}/>` +
         labelSvg(view.label, titleX, y - c.h / 2 + 8 + view.label.height / 2, ` class="pele-cluster-label" fill="var(--_m)"${view.style.text}`, icons) +
         '</g>';
       continue;
@@ -311,11 +309,9 @@ function draw(db: AgentflowDb, config: Config, options: RenderOptions, turned: b
       const line = h / 2 - DOTS - 2;
       const dots = line + (DOTS + 2) / 2;
       shape =
-        `<rect x="${num(-w / 2)}" y="${num(-h / 2)}" width="${num(w)}" height="${num(h)}" rx="${RADIUS}"${tint(
-          node.colorIndex ?? KIND_SLOT.size,
-          '0.06',
-          view.style
-        )}${view.style.shape}/>` +
+        `<rect x="${num(-w / 2)}" y="${num(-h / 2)}" width="${num(w)}" height="${num(h)}"${rounded(
+          tint(node.colorIndex ?? KIND_SLOT.size, '0.06', view.style) + view.style.shape
+        )}/>` +
         `<path d="M${num(-w / 2 + 10)},${num(line)}H${num(w / 2 - 10)}" fill="none" stroke="${color}" stroke-dasharray="3 3"${view.style.line}/>` +
         `<path class="pele-collapsed-mark" d="${dot(-9, dots)}${dot(0, dots)}${dot(9, dots)}" fill="${color}" stroke="none"/>`;
     } else {

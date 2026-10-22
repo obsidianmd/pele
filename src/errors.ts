@@ -3,6 +3,7 @@ export type PeleErrorCode = 'unsupported-diagram' | 'syntax' | 'semantic' | 'lim
 export class PeleError extends Error {
   code: PeleErrorCode;
   type: string | null;
+  mermaidType: string | null;
   line: number;
   column: number;
   snippet: string;
@@ -10,12 +11,13 @@ export class PeleError extends Error {
   constructor(
     message: string,
     code: PeleErrorCode = 'syntax',
-    info: { type?: string | null; line?: number; column?: number; snippet?: string } = {}
+    info: { type?: string | null; mermaidType?: string | null; line?: number; column?: number; snippet?: string } = {}
   ) {
     super(message);
     this.name = 'PeleError';
     this.code = code;
     this.type = info.type ?? null;
+    this.mermaidType = info.mermaidType ?? null;
     this.line = info.line ?? 0;
     this.column = info.column ?? 0;
     this.snippet = info.snippet ?? '';

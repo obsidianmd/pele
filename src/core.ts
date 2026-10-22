@@ -1,7 +1,8 @@
-import { detect, type DiagramType } from './detect.js';
+import { detectDiagram, type Detected, type DiagramType, type MermaidType } from './detect.js';
 import { PeleError } from './errors.js';
 import { decodeEntities } from './text/entities.js';
 import { withIcons } from './text/icons.js';
+import { withMath } from './text/math.js';
 import { encodeEntities, preprocess, type Config } from './preprocess.js';
 import type { DiagramModel } from './models.js';
 import { mountWith, type MountOptions, type Mounted } from './mount.js';
@@ -9,9 +10,9 @@ import type { Diagram, RenderOptions, RenderResult } from './types.js';
 
 export { PeleError } from './errors.js';
 export type { PeleErrorCode } from './errors.js';
-export type { DiagramType } from './detect.js';
+export type { DiagramType, MermaidType } from './detect.js';
 export type { TextMeasurer } from './text/measurer.js';
-export type { IconResolver, LinkInfo, RenderOptions, RenderResult } from './types.js';
+export type { IconResolver, LinkInfo, MathMarkup, MathResolver, RenderOptions, RenderResult } from './types.js';
 export type { Diagram } from './types.js';
 export type { MountOptions, Mounted } from './mount.js';
 export { forgetTextWidths } from './text/measurer.js';
@@ -49,8 +50,22 @@ function guarded<T>(run: () => T): T {
   }
 }
 
-interface Parsed {
-  type: DiagramType;
+function tagErrors<T>(found: Detected, run: () => T): T {
+  try {
+    return run();
+  } catch (error) {
+    if (error instanceof RangeError) throw new PeleError('Diagram is nested too deeply.', 'limit', found);
+    if (error instanceof PeleError) {
+      error.type ??= found.type;
+      error.mermaidType ??= found.mermaidType;
+    }
+    throw error;
+  }
+}
+
+export type ParsedDiagramModel = DiagramModel & { readonly mermaidType: MermaidType };
+
+interface Parsed extends Detected {
   diagram: Diagram<unknown>;
   model: unknown;
   config: Config;
@@ -68,18 +83,20 @@ function parseSource(
     throw new PeleError(`Diagram source is longer than the limit of ${limit} characters.`, 'limit');
   }
   const pre = preprocess(text);
-  const type = detect(pre.text);
-  if (type === null) {
+  const found = detectDiagram(pre.text);
+  if (found === null) {
     throw new PeleError('No diagram type detected for the given text.', 'unsupported-diagram');
   }
-  const diagram = diagrams.get(type);
+  const diagram = diagrams.get(found.type);
   if (diagram === undefined) {
-    throw new PeleError(`Diagram type "${type}" is not supported yet.`, 'unsupported-diagram', { type });
+    throw new PeleError(`Diagram type "${found.type}" is not supported yet.`, 'unsupported-diagram', found);
   }
   const config = extra ? { ...extra, ...pre.config } : pre.config;
   const source = diagram.keepComments ? pre.withComments : pre.text;
-  const model = diagram.parse(encodeEntities(source) + '\n', config, pre.title, pre.lineOffset, { maxEdges });
-  return { type, diagram, model, config };
+  const model = tagErrors(found, () =>
+    diagram.parse(encodeEntities(source) + '\n', config, pre.title, pre.lineOffset, { maxEdges })
+  );
+  return { ...found, diagram, model, config };
 }
 
 function parsedFrom(source: string | DiagramModel, options: ParseOptions): Parsed {
@@ -90,7 +107,7 @@ function parsedFrom(source: string | DiagramModel, options: ParseOptions): Parse
 }
 
 export function detectType(text: string): DiagramType | null {
-  return detect(preprocess(text).text);
+  return detectDiagram(preprocess(text).text)?.type ?? null;
 }
 
 export function supports(text: string): boolean {
@@ -106,17 +123,19 @@ export function supports(text: string): boolean {
 // nothing left to do with them.
 export type ParseOptions = Pick<RenderOptions, 'limit' | 'maxEdges' | 'config'>;
 
-export function parse(text: string, options: ParseOptions = {}): DiagramModel {
+export function parse(text: string, options: ParseOptions = {}): ParsedDiagramModel {
   return guarded(() => {
     const parsed = parseSource(text, options.limit, options.maxEdges, options.config);
-    if (typeof parsed.model === 'object' && parsed.model !== null) parsedModels.set(parsed.model, parsed);
-    return parsed.model as DiagramModel;
+    const model = parsed.model as ParsedDiagramModel;
+    Object.defineProperty(model, 'mermaidType', { value: parsed.mermaidType, enumerable: true });
+    parsedModels.set(model, parsed);
+    return model;
   });
 }
 
 export function render(source: string | DiagramModel, options: RenderOptions = {}): RenderResult {
   return guarded(() => {
-    const { type, diagram, model, config } = parsedFrom(source, options);
+    const { type, mermaidType, diagram, model, config } = parsedFrom(source, options);
     const section = config[diagram.section ?? type];
     const fixed = typeof section === 'object' && section !== null && !Array.isArray(section) && section.useMaxWidth === false;
     const responsive = options.responsive ?? !fixed;
@@ -124,13 +143,20 @@ export function render(source: string | DiagramModel, options: RenderOptions = {
     // entity codes turned into their characters, as `data-icon` and `data-id` in the SVG do.
     const resolve = options.icons;
     const icons = resolve && ((name: string) => resolve(decodeEntities(name)));
-    const rendered = withIcons(icons, () => diagram.render(model, config, { ...options, responsive, icons }));
+    const rendered = tagErrors({ type, mermaidType }, () =>
+      withMath(diagram.math ? options.math : undefined, () =>
+        withIcons(icons, () => diagram.render(model, config, { ...options, responsive, icons }))
+      )
+    );
     const outputLimit = options.outputLimit ?? DEFAULT_OUTPUT_LIMIT;
     if (rendered.svg.length > outputLimit) {
-      throw new PeleError(`Diagram output is longer than the limit of ${outputLimit} characters.`, 'limit', { type });
+      throw new PeleError(`Diagram output is longer than the limit of ${outputLimit} characters.`, 'limit', {
+        type,
+        mermaidType,
+      });
     }
     for (const link of rendered.links) link.id = decodeEntities(link.id);
-    return { type, ...rendered };
+    return { type, mermaidType, ...rendered };
   });
 }
 
