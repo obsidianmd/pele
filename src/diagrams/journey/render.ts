@@ -1,7 +1,7 @@
 import type { Config } from '../../preprocess.js';
 import { escText, labelSvg, num } from '../../svg/builder.js';
 import { svgDocument } from '../../svg/root.js';
-import { RADIUS, seriesColor } from '../../svg/theme.js';
+import { ROUNDED, seriesColor } from '../../svg/theme.js';
 import type { Label } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
 import type { RenderOptions, Rendered } from '../../types.js';
@@ -43,7 +43,7 @@ function draw(model: JourneyModel, _config: Config, options: RenderOptions, down
   const size = options.fontSize ?? 16;
   const small = Math.round(size * 0.875);
   const tiny = Math.round(size * 0.75);
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const pad = options.padding ?? 8;
   if (down) return verticalJourney(model, options);
   const tasks = model.tasks;
@@ -159,7 +159,7 @@ function draw(model: JourneyModel, _config: Config, options: RenderOptions, down
       });
       cards.push(
         `<g class="pele-node pele-task" data-id="${escText(task.task.trim())}">` +
-          `<rect x="${num(x)}" y="${num(cardsY)}" width="${num(cardW)}" height="${num(cardH)}" rx="${RADIUS}" fill="var(--_s)" stroke="var(--_b)"/>` +
+          `<rect x="${num(x)}" y="${num(cardsY)}" width="${num(cardW)}" height="${num(cardH)}" fill="var(--_s)" stroke="var(--_b)"${ROUNDED}/>` +
           labelSvg(labels[i], cx, cardsY + PAD_Y + textH / 2, ` font-size="${small}"`) +
           dots +
           '</g>'
@@ -180,7 +180,7 @@ function draw(model: JourneyModel, _config: Config, options: RenderOptions, down
       const w = run.count * pitch - GAP;
       body +=
         `<g class="pele-cluster pele-section" data-id="${escText(tasks[run.start].section.trim())}">` +
-        `<rect x="${num(x)}" y="${num(top)}" width="${num(w)}" height="${num(bandH)}" rx="${RADIUS}" fill="var(--_a)"/>` +
+        `<rect x="${num(x)}" y="${num(top)}" width="${num(w)}" height="${num(bandH)}" fill="var(--_a)"${ROUNDED}/>` +
         labelSvg(run.label, x + w / 2, top + bandH / 2, ` font-size="${small}" font-weight="var(--_hw)"`) +
         members +
         '</g>';
@@ -219,7 +219,7 @@ function draw(model: JourneyModel, _config: Config, options: RenderOptions, down
 function verticalJourney(model: JourneyModel, options: RenderOptions): Rendered {
   const size = options.fontSize ?? 16;
   const small = Math.round(size * 0.875);
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const pad = options.padding ?? 8;
   const room = Math.max(140, (options.maxWidth ?? 320) - 2 * pad);
   const title = fitLabel(model.title, measurer, size, room, Style.Bold);
@@ -245,7 +245,7 @@ function verticalJourney(model: JourneyModel, options: RenderOptions): Rendered 
     let h = 2 * PAD_Y + textH;
     for (const person of people) h += Math.max(16, person.label.height) + 4;
     const w = Math.max(room, label.width + 72);
-    body += `<g class="pele-node pele-journey-step" data-id="${index}"><rect x="${num(pad)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="${RADIUS}" fill="var(--_s)" stroke="var(--_b)"/>`;
+    body += `<g class="pele-node pele-journey-step" data-id="${index}"><rect x="${num(pad)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" fill="var(--_s)" stroke="var(--_b)"${ROUNDED}/>`;
     body += labelSvg(label, pad + PAD_X + label.width / 2, y + PAD_Y + label.height / 2, ' class="pele-label"');
     const cx = pad + w - 28;
     body += face(cx, y + PAD_Y + FACE, task.score > 3 ? 'happy' : task.score < 3 ? 'sad' : 'neutral');

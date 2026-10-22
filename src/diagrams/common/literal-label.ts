@@ -1,5 +1,5 @@
 import { esc, labelSvg, num, sharedStyle, spanStyle, textStyle } from '../../svg/builder.js';
-import type { Label } from '../../text/label.js';
+import { withHeights, type Label } from '../../text/label.js';
 import type { TextMeasurer } from '../../text/measurer.js';
 
 const SPACE = /\s/;
@@ -52,18 +52,18 @@ export function breakLabel(label: Label, measurer: TextMeasurer, room: number): 
     let current: Label['lines'][number] = [], width = 0;
     const commit = (): void => { lines.push(current); widths.push(width); current = []; width = 0; };
     for (const span of label.lines[i]) {
-      if (span.icon !== undefined) {
+      if (span.icon !== undefined || span.math) {
         if (current.length && width + span.width > room) commit();
         current.push(span); width += span.width;
         continue;
       }
       for (const char of Array.from(span.text)) {
         let last: Label['lines'][number][number] | undefined = current[current.length - 1];
-        const joined = last && last.icon === undefined && last.style === span.style;
+        const joined = last && last.icon === undefined && last.math === undefined && last.style === span.style;
         const nextWidth = measurer.width(joined ? last!.text + char : char, label.size, span.style);
         let added = nextWidth - (joined ? last!.width : 0);
         if (current.length && width + added > room) { commit(); last = undefined; added = measurer.width(char, label.size, span.style); }
-        if (last && last.icon === undefined && last.style === span.style) { last.text += char; last.width += added; }
+        if (last && last.icon === undefined && last.math === undefined && last.style === span.style) { last.text += char; last.width += added; }
         else current.push({ text: char, style: span.style, width: added });
         width += added;
       }
@@ -72,7 +72,8 @@ export function breakLabel(label: Label, measurer: TextMeasurer, room: number): 
   }
   let width = 0;
   for (const w of widths) width = Math.max(width, w);
-  return { ...label, lines, widths, width, height: lines.length * label.lineHeight };
+  const broken = { ...label, lines, widths, width, height: lines.length * label.lineHeight };
+  return label.heights ? withHeights(broken) : broken;
 }
 
 // Writes a label with every line starting at x. A line is anchored at its start and keeps its

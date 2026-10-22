@@ -5,6 +5,7 @@ import { renderBlock } from './render.js';
 
 export const block: Diagram<BlockDb> = {
   type: 'block',
+  math: true,
   parse(source, _config, title) {
     const db = new BlockDb();
     db.title = title;

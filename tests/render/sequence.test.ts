@@ -180,6 +180,25 @@ describe('sequence rendering', () => {
     expect(square.match(/data-id="i0"><path d="([^"]*)"/)![1]).not.toContain('A6,6');
   });
 
+  it('starts the next row below a message to self whose label is taller than its loop', () => {
+    const baselines = (svg: string, id: string): number[] => {
+      const label = svg.match(new RegExp(`<g class="pele-edge-label" data-id="${id}">(.*?)</g>`))![1];
+      return [...label.matchAll(/ y="([\d.]+)"/g)].map((m) => Number(m[1]));
+    };
+    const step = (svg: string): number => {
+      const self = baselines(svg, 'i0');
+      return baselines(svg, 'i1')[0] - self[self.length - 1];
+    };
+    const broken = svgOf('sequenceDiagram\n  A->>A: one<br/>two<br/>three\n  A->>B: next');
+    const own = baselines(broken, 'i0');
+    expect(own).toHaveLength(3);
+    expect(step(broken)).toBeGreaterThanOrEqual(own[1] - own[0]);
+    const long = 'a message to self long enough to wrap onto several lines';
+    const wrapped = svgOf(`sequenceDiagram\n  A->>A: ${long}\n  A->>B: next`, { maxWidth: 200 });
+    expect(baselines(wrapped, 'i0').length).toBeGreaterThan(1);
+    expect(step(wrapped)).toBeGreaterThanOrEqual(own[1] - own[0]);
+  });
+
   it('draws activations, nested ones offset, and ends arrows at their edges', () => {
     const svg = svgOf('sequenceDiagram\n  A->>+B: one\n  A->>+B: two\n  B-->>-A: three\n  B-->>-A: four');
     const x = lifelines(svg);

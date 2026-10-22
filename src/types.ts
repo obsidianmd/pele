@@ -4,6 +4,12 @@ import type { TextMeasurer } from './text/measurer.js';
 
 export type IconResolver = (name: string) => string | null | undefined;
 
+// Dimensions are in pixels. HTML requires the typesetter's CSS.
+export type MathMarkup = { svg: string; width: number; height: number } | { html: string; width: number; height: number };
+
+// TeX excludes the $$ delimiters; font size is in pixels.
+export type MathResolver = (tex: string, size: number) => MathMarkup | null | undefined;
+
 export interface RenderOptions {
   measurer?: TextMeasurer;
   // The fonts labels are measured in, and drawn in where the page sets no --pele-font or
@@ -33,6 +39,7 @@ export interface RenderOptions {
   // Link `rel` attribute. Defaults to `noopener`; an empty string omits it.
   linkRel?: string;
   icons?: IconResolver;
+  math?: MathResolver;
   config?: Config;
   // The time gantt charts treat as now. Defaults to the current time.
   now?: number | Date;
@@ -70,6 +77,8 @@ export interface Diagram<Model> {
   // A diagram that reports source positions is given the text with its `%%` comment lines kept.
   // `lineOffset` is the number of front matter lines that were removed before that text.
   keepComments?: boolean;
+  // Enables $$...$$ in labels.
+  math?: boolean;
   parse(source: string, config: Config, title: string | undefined, lineOffset: number, limits: ParseLimits): Model;
   render(model: Model, config: Config, options: RenderOptions): Rendered;
 }

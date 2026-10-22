@@ -11,10 +11,21 @@ const collect = runInNewContext('gc') as () => void;
 // Just enough of a browser for mount(): an element with a width, its computed style, and an observer to fire by hand.
 interface FakeElement { clientWidth: number; innerHTML: string }
 let observers: { fire: () => void; element: FakeElement; connected: boolean }[] = [];
+let frames = new Map<number, FrameRequestCallback>();
+let nextFrame = 0;
 const globals = globalThis as Record<string, unknown>;
+
+const paint = (): void => {
+  const pending = [...frames.values()];
+  frames.clear();
+  for (const callback of pending) callback(0);
+};
 
 beforeEach(() => {
   observers = [];
+  frames = new Map();
+  globals.requestAnimationFrame = (callback: FrameRequestCallback) => { frames.set(++nextFrame, callback); return nextFrame; };
+  globals.cancelAnimationFrame = (id: number) => { frames.delete(id); };
   globals.getComputedStyle = () => ({ fontFamily: 'sans-serif', paddingLeft: '10px', paddingRight: '10px', getPropertyValue: () => '' });
   globals.ResizeObserver = class {
     private entry = { fire: () => this.callback(), element: undefined as unknown as FakeElement, connected: false };
@@ -32,6 +43,8 @@ beforeEach(() => {
 afterEach(() => {
   delete globals.getComputedStyle;
   delete globals.ResizeObserver;
+  delete globals.requestAnimationFrame;
+  delete globals.cancelAnimationFrame;
 });
 
 const element = (clientWidth: number): HTMLElement =>
@@ -39,6 +52,7 @@ const element = (clientWidth: number): HTMLElement =>
 const resize = (target: HTMLElement, clientWidth: number): void => {
   (target as unknown as FakeElement).clientWidth = clientWidth;
   for (const observer of observers) if (observer.connected && observer.element === (target as unknown)) observer.fire();
+  paint();
 };
 const options = { measurer: metricsMeasurer };
 const spying = (seen: (o: RenderOptions) => void, parsed?: () => void): Engine => ({
@@ -79,22 +93,51 @@ const FLOW = 'flowchart LR\n  A[One] --> B[Two] --> C[Three] --> D[Four] --> E[F
 
 describe('mount', () => {
   it('draws a chart for the room the element has, and again when that changes', () => {
-    const natural = render(SANKEY, options);
+    const own = { ...options, idPrefix: 'own' };
+    const natural = render(SANKEY, own);
     const el = element(1000);
     const drawn: RenderResult[] = [];
-    const handle = mount(el, SANKEY, { ...options, onRender: (result) => drawn.push(result) });
+    const handle = mount(el, SANKEY, { ...own, onRender: (result) => drawn.push(result) });
     expect(el.innerHTML).toBe(natural.svg);
     expect(handle.result.width).toBe(natural.width);
 
     resize(el, 420);
     expect(handle.result.width).toBe(400);
-    expect(el.innerHTML).toBe(render(SANKEY, { ...options, maxWidth: 400 }).svg);
+    expect(el.innerHTML).toBe(render(SANKEY, { ...own, maxWidth: 400 }).svg);
 
     resize(el, 340);
     expect(handle.result.width).toBe(320);
     resize(el, 1000);
     expect(el.innerHTML).toBe(natural.svg);
     expect(drawn.map((result) => result.width)).toEqual([natural.width, 400, 320, natural.width]);
+  });
+
+  it('draws for a change of size in the next frame, once however many changes it sees', () => {
+    const el = element(1000);
+    let count = 0;
+    const handle = mount(el, SANKEY, { ...options, onRender: () => count++ });
+    (el as unknown as FakeElement).clientWidth = 420;
+    observers[0].fire();
+    observers[0].fire();
+    expect(count).toBe(1);
+    paint();
+    expect(count).toBe(2);
+    expect(handle.result.width).toBe(400);
+
+    (el as unknown as FakeElement).clientWidth = 340;
+    observers[0].fire();
+    handle.destroy();
+    paint();
+    expect(count).toBe(2);
+  });
+
+  it('draws for a change of size at once in a window without frames', () => {
+    delete globals.requestAnimationFrame;
+    const el = element(1000);
+    const handle = mount(el, SANKEY, options);
+    (el as unknown as FakeElement).clientWidth = 420;
+    observers[0].fire();
+    expect(handle.result.width).toBe(400);
   });
 
   it('leaves the drawing alone while the element has no width, as when it is hidden', () => {
@@ -523,12 +566,13 @@ describe('mount', () => {
   });
 
   it('keeps the text it had when other text cannot be drawn', () => {
+    const own = { ...options, idPrefix: 'own' };
     const el = element(1000);
-    const handle = mount(el, SANKEY, options);
+    const handle = mount(el, SANKEY, own);
     handle.update('flowchart LR\n  A -->');
     resize(el, 340);
     expect(handle.result?.width).toBe(320);
-    expect(el.innerHTML).toBe(render(SANKEY, { ...options, maxWidth: 320 }).svg);
+    expect(el.innerHTML).toBe(render(SANKEY, { ...own, maxWidth: 320 }).svg);
     // The error stays with its text, however often that text is given.
     handle.update('flowchart LR\n  A -->');
     expect(handle.error).toBeInstanceOf(PeleError);
@@ -562,6 +606,8 @@ describe('mount', () => {
       const view = {
         getComputedStyle: () => ({ fontFamily, paddingLeft: '0px', paddingRight: '0px', getPropertyValue: () => '' }),
         ResizeObserver: globals.ResizeObserver,
+        requestAnimationFrame: globals.requestAnimationFrame,
+        cancelAnimationFrame: globals.cancelAnimationFrame,
       };
       return { defaultView: view, fonts: fontSet().fonts };
     };
@@ -575,6 +621,7 @@ describe('mount', () => {
     el.ownerDocument = second;
     seen.length = 0;
     observers[0].fire();
+    paint();
     expect([...new Set(seen)]).toEqual(['Inter']);
     expect(observers.map((observer) => observer.connected)).toEqual([false, true]);
   });

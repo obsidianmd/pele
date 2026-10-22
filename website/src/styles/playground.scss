@@ -391,3 +391,8 @@
     &::selection { color: HighlightText; background: Highlight; }
   }
 }
+
+// Temml lowers accents in Safari with transforms, which Safari draws in the wrong place inside SVG.
+.pele-math [class*='wbk-'] {
+  transform: none;
+}

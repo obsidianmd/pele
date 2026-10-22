@@ -4,7 +4,12 @@ export const enum Style {
   Bold = 1,
   Italic = 2,
   Mono = 4,
+  Sub = 8,
+  Sup = 16,
 }
+
+// Approximate divisor for CSS font-size="smaller".
+const SMALLER = 1.2;
 
 export interface TextMeasurer {
   width(text: string, size: number, style: number): number;
@@ -47,6 +52,7 @@ function isZeroWidth(c: number): boolean {
 export const metricsMeasurer: TextMeasurer = {
   width(text, size, style) {
     const mono = (style & Style.Mono) !== 0;
+    const eff = style & (Style.Sub | Style.Sup) ? size / SMALLER : size;
     const table = style & Style.Bold ? (bold ??= unpack(BOLD)) : (regular ??= unpack(REGULAR));
     let units = 0;
     for (let i = 0; i < text.length; i++) {
@@ -57,7 +63,7 @@ export const metricsMeasurer: TextMeasurer = {
       else if (isWide(c)) units += mono ? 1200 : 1000;
       else units += mono ? 600 : 580;
     }
-    return (units * size) / 1000;
+    return (units * eff) / 1000;
   },
 };
 
@@ -111,10 +117,11 @@ export function canvasMeasurer(fontFamily: string, monoFamily = 'monospace'): Te
         faces = fonts?.size;
         caches.clear();
       }
+      const eff = style & (Style.Sub | Style.Sup) ? size / SMALLER : size;
       const font =
         (style & Style.Italic ? 'italic ' : '') +
         (style & Style.Bold ? 'bold ' : '') +
-        size +
+        eff +
         'px ' +
         (style & Style.Mono ? monoFamily : fontFamily);
       let cache = caches.get(font);

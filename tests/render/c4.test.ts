@@ -233,6 +233,18 @@ Enterprise_Boundary(e, "E") {
     expect(Number(d[4])).toBe(Number(d[2]));
   });
 
+  it('fits the label of a line between neighbours in the gap between them', () => {
+    for (const args of ['"Sends a fairly long description of the relationship"', '"Makes API calls to", "JSON/HTTPS"']) {
+      const { svg } = draw(`C4Context\nSystem(a, "A")\nSystem(b, "B")\nRel(a, b, ${args})`);
+      const a = box(svg, 'a');
+      const b = box(svg, 'b');
+      const label = box(svg, 'a-b');
+      expect(b.y).toBe(a.y);
+      expect(label.x, args).toBeGreaterThanOrEqual(a.x + a.w);
+      expect(label.x + label.w, args).toBeLessThanOrEqual(b.x);
+    }
+  });
+
   it('ends a line on the outline of a person, a database, and a queue', () => {
     const { svg } = draw(`C4Context
 UpdateLayoutConfig("1", "1")

@@ -7,6 +7,7 @@ import { mermaidAutocomplete } from './playground-autocomplete';
 import { createPlaygroundEditor } from './playground-editor';
 import { setupPlaygroundColumns } from './playground-columns';
 import { setupPlaygroundCopy } from './playground-copy';
+import { playgroundMath } from './playground-math';
 import { renderMermaid } from './playground-mermaid';
 import { setupPlaygroundSettings } from './playground-settings';
 import { setupPlaygroundShare } from './playground-share';
@@ -134,6 +135,7 @@ function renderPele() {
       idPrefix: 'pele-',
       maxWidth,
       icons: siteIcon,
+      math: playgroundMath(source, renderPele),
     };
     const { result, time } = timed(() => render(source, options));
 

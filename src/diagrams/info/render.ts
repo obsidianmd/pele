@@ -10,7 +10,7 @@ import type { InfoModel } from './model.js';
 
 export function renderInfo(model: InfoModel, _config: Config, options: RenderOptions): Rendered {
   const size = options.fontSize ?? 16;
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const pad = options.padding ?? 8;
 
   const title = layoutLabel(model.title, false, measurer, size, 4000, Style.Bold);

@@ -43,8 +43,10 @@ const CORNER = 8;
 // A wide label on an upright lane leans this far out from it, to the middle of the gap between columns.
 const LEAN = 30;
 // Label widths that fit the gap between two columns, and where there is room to spare.
-const NARROW = 88;
+export const NARROW = 88;
 const WIDE = 160;
+// The space a label's background adds to the width of its text.
+export const LABEL_PAD = 8;
 // The shared person shape: a head of radius 13 centered 14 below the top, over a body that starts 26 below it.
 export const HEAD = 26;
 

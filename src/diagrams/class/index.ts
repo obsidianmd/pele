@@ -5,6 +5,7 @@ import { renderClass } from './render.js';
 
 export const classDiagram: Diagram<ClassDb> = {
   type: 'class',
+  math: true,
   parse(source, _config, title) {
     const db = new ClassDb();
     if (title) db.title = title;

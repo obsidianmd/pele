@@ -5,7 +5,7 @@ import { esc, escText, labelSvg, num } from '../../svg/builder.js';
 import { ARROW, marker, markerTrim } from '../../svg/edges.js';
 import { svgDocument } from '../../svg/root.js';
 import { drawShape } from '../../svg/shapes.js';
-import { RADIUS, resolveStyle, type ResolvedStyle } from '../../svg/theme.js';
+import { resolveStyle, rounded, type ResolvedStyle } from '../../svg/theme.js';
 import { layoutLabel } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
 import type { LinkInfo, RenderOptions, Rendered } from '../../types.js';
@@ -13,7 +13,7 @@ import { linked, sanitizeUrl } from '../../util/url.js';
 import { leftLabelSvg } from '../common/literal-label.js';
 import type { C4Db } from './db.js';
 import { HEAD_LEFT, HEAD_TOP, layoutC4 } from './layout.js';
-import { HEAD, LANE, Lanes, crosses, cylRy, queueRx, route, type Box } from './route.js';
+import { HEAD, LABEL_PAD, LANE, Lanes, crosses, cylRy, queueRx, route, type Box } from './route.js';
 
 const PAIR_SHIFT = 7;
 const NARROW_GAP = 36;
@@ -55,7 +55,7 @@ export function renderC4(db: C4Db, _config: Config, options: RenderOptions): Ren
 function draw(db: C4Db, _config: Config, options: RenderOptions, tight: boolean, gap = NARROW_GAP): [Rendered, number] {
   const size = options.fontSize ?? 16;
   const small = Math.round(size * 0.8125);
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const pad = options.padding ?? 8;
   const links: LinkInfo[] = [];
   const { order, boxes } = layoutC4(db, measurer, size, small, tight ? Math.max(80, (options.maxWidth ?? 320) - 2 * pad) : undefined, gap);
@@ -163,7 +163,7 @@ function draw(db: C4Db, _config: Config, options: RenderOptions, tight: boolean,
     const text = (db.c4Type === 'C4Dynamic' ? index + 1 + ': ' : '') + rel.label;
     const label = layoutLabel(text, false, measurer, small, r.room);
     const techn = layoutLabel(rel.techn ? `[${rel.techn}]` : undefined, false, measurer, small, r.room, Style.Italic);
-    const lw = Math.max(label.width, techn.width) + 8;
+    const lw = Math.max(label.width, techn.width) + LABEL_PAD;
     const lh = label.height + techn.height;
     if (lh === 0) return;
 
@@ -231,9 +231,9 @@ function draw(db: C4Db, _config: Config, options: RenderOptions, tight: boolean,
       text += leftLabelSvg(group.labels[2], x, y, ` class="pele-c4-descr" font-size="${small}" fill="var(--_m)"${style.text}`);
       clusters +=
         `<g class="pele-cluster pele-c4-${boundary.nodeType ? 'node' : 'boundary'}" data-id="${escText(boundary.alias)}">` +
-        `<rect x="${num(group.x)}" y="${num(group.y)}" width="${num(group.w)}" height="${num(group.h)}" rx="${RADIUS}" fill="none" stroke="var(--_b)"${
+        `<rect x="${num(group.x)}" y="${num(group.y)}" width="${num(group.w)}" height="${num(group.h)}" fill="none" stroke="var(--_b)"${
           boundary.nodeType ? '' : ' stroke-dasharray="6 4"'
-        }${style.shape}/>` +
+        }${rounded(style.shape)}/>` +
         link(text, boundary.link, boundary.alias, links, options) +
         '</g>';
     }

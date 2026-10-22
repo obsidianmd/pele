@@ -326,12 +326,25 @@ export function mountWith(engine: Engine, element: HTMLElement, text: string, op
   // an observer reports only on its own window's frames.
   let view: typeof globalThis | undefined;
   let observer: ResizeObserver | undefined;
+  let frame: number | undefined;
+  const cancelFrame = (): void => {
+    if (frame !== undefined) view?.cancelAnimationFrame(frame);
+    frame = undefined;
+  };
   const watch = (): void => {
     const next = windowOf(element);
     if (next === view) return;
     observer?.disconnect();
+    cancelFrame();
     view = next;
-    observer = next.ResizeObserver ? new next.ResizeObserver(refresh) : undefined;
+    observer = next.ResizeObserver ? new next.ResizeObserver(() => {
+      if (frame !== undefined) return;
+      if (!next.requestAnimationFrame) return refresh();
+      frame = next.requestAnimationFrame(() => {
+        frame = undefined;
+        refresh();
+      });
+    }) : undefined;
     observer?.observe(element);
   };
 
@@ -399,6 +412,7 @@ export function mountWith(engine: Engine, element: HTMLElement, text: string, op
       destroyed = true;
       observer?.disconnect();
       observer = undefined;
+      cancelFrame();
       view = undefined;
       zoomer?.destroy();
       onFontsLoaded.delete(handle);

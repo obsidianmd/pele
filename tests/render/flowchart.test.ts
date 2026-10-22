@@ -72,6 +72,17 @@ describe('flowchart rendering', () => {
     expect(svg.match(/<tspan/g)?.length).toBe(2);
   });
 
+  it('decodes HTML5 aliases such as lcub and verbar in labels', () => {
+    const { svg } = render('flowchart LR\n  A["GET /plans/&lcub;id&rcub;"] --> B["items#lsqb;0#rsqb; #verbar; none"]', options);
+    expect(svg).toContain('GET /plans/{id}');
+    expect(svg).toContain('items[0] | none');
+  });
+
+  it('decodes each entity code once', () => {
+    const { svg } = render('flowchart LR\n  A["x #amp;lt; y #38;gt; z"]', options);
+    expect(svg).toContain('x &amp;lt; y &amp;gt; z');
+  });
+
   it('wraps long labels', () => {
     const short = render('flowchart TD\n  A[one two]', options);
     const long = render('flowchart TD\n  A[one two three four five six seven eight nine ten eleven twelve]', options);
@@ -85,10 +96,41 @@ describe('flowchart rendering', () => {
     expect(svg).toContain('<tspan font-style="italic">Markdown</tspan>');
   });
 
+  it('draws <code> spans in labels with the monospace font', () => {
+    const { svg } = render('flowchart TD\n  A["Call <code>render()</code> once"]', options);
+    expect(svg).toMatch(/<tspan[^>]* font-family="var\(--_fm\)">render\(\)<\/tspan>/);
+    expect(svg).not.toMatch(/font-family="var\(--_fm\)">Call /);
+  });
+
+  it('writes the monospace family once when a whole label is code', () => {
+    const { svg } = render('flowchart TD\n  A["<code>render()</code>"]', options);
+    expect(svg).toMatch(/<text[^>]* font-family="var\(--_fm\)"/);
+    expect(svg.match(/font-family="var\(--_fm\)"/g)?.length).toBe(1);
+  });
+
   it('closes markdown emphasis in a label that is already bold', () => {
     const { svg } = render('flowchart TD\n  A["`one **two** three`"]\n  style A font-weight:bold', options);
     expect(svg).not.toContain('**');
     expect(svg).toContain('two');
+  });
+
+  it.each(['b', 'strong', 'i', 'em'])('keeps <%s> formatting across explicit line breaks', (tag) => {
+    for (const br of ['<br/>', '<br>', '<BR />', '\\n', '\n']) {
+      const source = `flowchart LR\n  A["<${tag}>First${br}Second</${tag}> plain${br}Third"]`;
+      const reopened = `flowchart LR\n  A["<${tag}>First</${tag}>${br}<${tag}>Second</${tag}> plain${br}Third"]`;
+      expect(render(source, options).svg, `${tag} across ${JSON.stringify(br)}`).toBe(render(reopened, options).svg);
+    }
+  });
+
+  it('keeps nested HTML formatting across breaks without changing other labels or the base style', () => {
+    const source = 'flowchart LR\n  A["<b><i>First<br/><br/>Second</i> bold</b> plain"] --> B[plain]';
+    const reopened = 'flowchart LR\n  A["<b><i>First</i></b><br/><br/><b><i>Second</i> bold</b> plain"] --> B[plain]';
+    for (const suffix of ['', '\n  style A font-weight:bold']) {
+      expect(render(source + suffix, options).svg).toBe(render(reopened + suffix, options).svg);
+    }
+    expect(render('flowchart LR\n A["<b>First<br/>Second"] --> B[plain]', options).svg).toBe(
+      render('flowchart LR\n A["<b>First</b><br/><b>Second</b>"] --> B[plain]', options).svg
+    );
   });
 
   it('applies style, classDef and linkStyle', () => {
@@ -335,5 +377,47 @@ describe('public api', () => {
     expect([...model.nodes.keys()]).toEqual(['A', 'B']);
     expect(model.nodes.get('B')?.type).toBe('diamond');
     expect(model.edges[0]).toMatchObject({ start: 'A', end: 'B', type: 'arrow_point' });
+  });
+
+  it('renders <sub> and <sup> in labels with baseline shift and smaller text', () => {
+    const { svg } = render('flowchart LR\n  A["H<sub>2</sub>O"] --> B["x<sup>2</sup>"]', options);
+    expect(svg).toContain('baseline-shift="sub"');
+    expect(svg).toContain('baseline-shift="super"');
+    expect(svg).toMatch(/<tspan[^>]*baseline-shift="sub"[^>]*>2<\/tspan>/);
+    expect(svg).toMatch(/<tspan[^>]*baseline-shift="super"[^>]*>2<\/tspan>/);
+    expect(svg).not.toContain('<sub>');
+    expect(svg).not.toContain('<sup>');
+    expect(() => assertWellFormed(svg)).not.toThrow();
+  });
+
+  it('nesting sub/sup inside other emphasis keeps each style on its own span', () => {
+    const { svg } = render('flowchart LR\n  A["<b>H<sub>2</sub>O</b>"]', options);
+    expect(svg).toMatch(/<text[^>]*font-weight="var\(--_w\)"/);
+    expect(svg).toMatch(/<tspan[^>]*baseline-shift="sub"[^>]*>2<\/tspan>/);
+    expect(() => assertWellFormed(svg)).not.toThrow();
+  });
+
+  it('shifts text inside both <sup> and <sub> by the inner tag', () => {
+    const { svg } = render('flowchart LR\n  A["x<sup>a<sub>b</sub>c</sup>"]', options);
+    expect(svg).toContain('<tspan baseline-shift="super" font-size="smaller">a</tspan>');
+    expect(svg).toContain('<tspan baseline-shift="sub" font-size="smaller">b</tspan>');
+    expect(svg).toContain('<tspan baseline-shift="super" font-size="smaller">c</tspan>');
+    expect(() => assertWellFormed(svg)).not.toThrow();
+  });
+
+  it('restores the outer <sup> when a nested <sup> closes', () => {
+    const { svg } = render('flowchart LR\n  A["<sup>a<sub>b<sup>c</sup>d</sub>e</sup>"]', options);
+    expect(svg).toContain('<tspan baseline-shift="sub" font-size="smaller">d</tspan><tspan baseline-shift="super" font-size="smaller">e</tspan>');
+  });
+
+  it('keeps the inner of <sup> and <sub> across a line break', () => {
+    const { svg } = render('flowchart LR\n  A["<sup>a<sub>b<br/>c</sub>d</sup>"]', options);
+    expect(svg).toMatch(/<tspan x="0" y="[\d.-]+" baseline-shift="sub" font-size="smaller">c<\/tspan><tspan baseline-shift="super" font-size="smaller">d<\/tspan>/);
+  });
+
+  it('shifts a label that is all subscript on its tspan', () => {
+    const { svg } = render('stateDiagram-v2\n  s1\n  note right of s1 : <sub>2</sub>', options);
+    expect(svg).toMatch(/<text[^>]* font-size="14"[^>]*><tspan[^>]* baseline-shift="sub" font-size="smaller">2<\/tspan><\/text>/);
+    expect(() => assertWellFormed(svg)).not.toThrow();
   });
 });

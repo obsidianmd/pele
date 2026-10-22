@@ -1,8 +1,10 @@
 import { syntaxError } from '../../errors.js';
+import { decodeEntities } from '../../text/entities.js';
 import type { SankeyDb } from './db.js';
 import { T, TOKEN_NAMES, tokenize } from './lexer.js';
 
 const RE_LINE_BREAKS = /[\n\r]+/g;
+const RE_INVALID_XML = /[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]/u;
 
 function isBlank(c: number): boolean {
   if (c === 10 || c === 13) return false;
@@ -56,7 +58,15 @@ export function parseSankey(src: string, db: SankeyDb): void {
     return text;
   };
 
-  const name = (): string => field().trim().replaceAll('""', '"');
+  const name = (): string => {
+    const start = starts[i];
+    const text = field().trim().replaceAll('""', '"');
+    // Entity codes can encode characters excluded by the lexer.
+    if (RE_INVALID_XML.test(decodeEntities(text))) {
+      throw syntaxError('sankey', src, start, 'Invalid XML character in node name');
+    }
+    return text;
+  };
 
   expect(T.SANKEY);
   expect(T.NEWLINE);

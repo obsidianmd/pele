@@ -46,7 +46,7 @@ export function renderPie(model: PieModel, config: Config, options: RenderOption
 function draw(model: PieModel, config: Config, options: RenderOptions, radius: number, tight: boolean): Rendered {
   const size = options.fontSize ?? 16;
   const small = Math.round(size * 0.875);
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const pad = options.padding ?? 8;
 
   const position = option(config, 'textPosition');

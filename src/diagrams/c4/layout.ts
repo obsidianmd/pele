@@ -1,14 +1,17 @@
+import { ARROW } from '../../svg/edges.js';
 import { layoutLabel, type Label } from '../../text/label.js';
 import { Style, type TextMeasurer } from '../../text/measurer.js';
 import type { C4Db } from './db.js';
-import { HEAD, LANE, type Box } from './route.js';
+import { HEAD, LABEL_PAD, LANE, NARROW, type Box } from './route.js';
 import type { C4Boundary, C4Element, C4Shape } from './types.js';
 
 const SHAPE_W = 216;
 const SHAPE_MIN_H = 64;
 const PAD_X = 14;
 const PAD_Y = 12;
-const GAP_X = 100;
+// Room between two columns for the label of a line across them, clear of an arrowhead on either side,
+// with an arrowhead's length to spare for a word a little wider than the label room.
+const GAP_X = NARROW + LABEL_PAD + 3 * ARROW;
 const GAP_Y = 88;
 // Room for a relation to run along the inside of a boundary.
 export const GROUP_PAD = LANE + 8;

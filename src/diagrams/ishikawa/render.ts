@@ -2,7 +2,7 @@ import type { Config } from '../../preprocess.js';
 import { escText, labelSvg, num } from '../../svg/builder.js';
 import { ARROW, marker } from '../../svg/edges.js';
 import { svgDocument } from '../../svg/root.js';
-import { RADIUS } from '../../svg/theme.js';
+import { ROUNDED } from '../../svg/theme.js';
 import { breakLabel } from '../common/literal-label.js';
 import { layoutLabel, type Label } from '../../text/label.js';
 import { Style, defaultMeasurer, type TextMeasurer } from '../../text/measurer.js';
@@ -136,7 +136,7 @@ export function renderIshikawa(model: IshikawaModel, _config: Config, options: R
 function draw(model: IshikawaModel, _config: Config, options: RenderOptions, down: boolean): Rendered {
   const size = options.fontSize ?? 16;
   const small = Math.round(size * 0.875);
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const pad = options.padding ?? 8;
   if (down) return verticalCauses(model, options);
   const root = model.root;
@@ -212,7 +212,7 @@ function draw(model: IshikawaModel, _config: Config, options: RenderOptions, dow
         marker('arrow_point', ax, 0, SLANT / LENGTH, -sign / LENGTH, 'var(--_l)') +
         `<rect x="${num(endX - category.boxW / 2)}" y="${num(boxY - category.boxH / 2)}" width="${num(category.boxW)}" height="${num(
           category.boxH
-        )}" rx="${RADIUS}" fill="var(--_s)" stroke="var(--_b)"/>` +
+        )}" fill="var(--_s)" stroke="var(--_b)"${ROUNDED}/>` +
         labelSvg(category.label, endX, boxY, ' class="pele-label"') +
         (texts ? `<g class="pele-ishikawa-causes" font-size="${small}">${texts}</g>` : '') +
         '</g>';
@@ -250,7 +250,7 @@ function draw(model: IshikawaModel, _config: Config, options: RenderOptions, dow
 function verticalCauses(model: IshikawaModel, options: RenderOptions): Rendered {
   const size = options.fontSize ?? 16;
   const small = Math.round(size * 0.875);
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const pad = options.padding ?? 8;
   const room = Math.max(140, (options.maxWidth ?? 320) - 2 * pad);
   const title = layoutLabel(model.title, false, measurer, size, titleRoom(options), Style.Bold);

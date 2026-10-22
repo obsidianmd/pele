@@ -37,10 +37,10 @@
   }
 
   // Anchor the opposite edge while stretching toward the pressed option.
-  &:has(> button:is([aria-selected="true"], [aria-pressed="true"]) ~ button:active) {
+  &:has(> button:is([aria-selected="true"], [aria-pressed="true"]) ~ button:active:hover) {
     --pill-scale: 1.1;
   }
-  &:has(> button:active ~ button:is([aria-selected="true"], [aria-pressed="true"])) {
+  &:has(> button:active:hover ~ button:is([aria-selected="true"], [aria-pressed="true"])) {
     --pill-scale: 1.1;
     --pill-shift: -10%;
   }

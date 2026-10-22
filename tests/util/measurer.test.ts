@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { render } from '../../src/index.js';
 import { canvasMeasurer } from '../../src/text/measurer.js';
 
 const globals = globalThis as Record<string, unknown>;
@@ -63,5 +64,22 @@ describe('canvasMeasurer', () => {
     measurer.width('abc', 16, 0);
     measurer.width('abc', 16, 0);
     expect(state.measured).toBe(1);
+  });
+
+  it('measures code in the monospace font a diagram is given', () => {
+    const fonts = new Set<string>();
+    globals.OffscreenCanvas = class {
+      getContext() {
+        return {
+          set font(value: string) {
+            fonts.add(value);
+          },
+          measureText: (text: string) => ({ width: text.length * 8 }),
+        };
+      }
+    };
+    render('flowchart LR\n  A["Call <code>render()</code> once"]', { fontFamily: 'Label Sans', fontFamilyMono: 'Code Mono' });
+    expect([...fonts].some((font) => font.endsWith('px Code Mono'))).toBe(true);
+    expect([...fonts].some((font) => font.endsWith('px monospace'))).toBe(false);
   });
 });

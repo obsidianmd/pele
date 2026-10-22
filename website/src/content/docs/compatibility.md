@@ -77,6 +77,10 @@ Pele limits source length, SVG output size, and edges in flowcharts and agentflo
 
 Labels use SVG text with support for line breaks, bold, and italic. Arbitrary HTML labels are not supported.
 
+Sankey node names also accept Unicode text, including accented letters, non-Latin scripts, and emoji, in quoted and unquoted CSV fields. This extends Mermaid 12.1.0's ASCII-only Sankey grammar. CSV commas, quotes, and line breaks keep their usual meaning.
+
+Sankey links use gradients, as in Mermaid, only when the diagram has an `idPrefix`, which `mount()` always provides. Without a prefix, links use their source node's color because diagrams on the same page would otherwise share gradient IDs.
+
 ### Interaction
 
 `click` statements that open a link are supported. JavaScript callbacks are ignored.
@@ -86,6 +90,10 @@ See [Security](/security#links-and-images) to configure allowed links and images
 ### Icons
 
 Pass an [`icons`](/api#renderoptions) resolver to supply custom icons such as `fa:fa-car`. Architecture and tree view also have built-in symbols.
+
+### Math
+
+Mermaid 12.1 uses KaTeX to typeset `$$...$$` in labels. Pass a [`math`](/api#math) resolver to typeset the same labels in Pele with KaTeX, Temml, MathJax, or another typesetter. If you don't pass a resolver, labels show the TeX source.
 
 ## Reporting differences
 

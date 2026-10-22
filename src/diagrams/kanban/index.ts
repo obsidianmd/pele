@@ -5,6 +5,7 @@ import { renderKanban } from './render.js';
 
 export const kanban: Diagram<KanbanModel> = {
   type: 'kanban',
+  math: true,
   parse(source, _config, title) {
     const db = new KanbanDb();
     db.title = title;

@@ -129,7 +129,7 @@ export class FlowDb implements FlowchartModel {
     style?: string[] | null,
     classes?: string[] | null,
     dir?: string,
-    props: Record<string, string> = {},
+    props?: Record<string, string>,
     metadata?: string
   ): void {
     if (!id || id.trim().length === 0) return;
@@ -183,7 +183,7 @@ export class FlowDb implements FlowchartModel {
     if (style !== undefined && style !== null) for (const s of style) vertex.styles.push(s);
     if (classes !== undefined && classes !== null) for (const c of classes) vertex.classes.push(c);
     if (dir !== undefined) vertex.dir = dir;
-    if (vertex.props === undefined) vertex.props = props;
+    if (vertex.props === undefined) vertex.props = props ?? {};
     else if (props !== undefined) Object.assign(vertex.props, props);
 
     if (doc === undefined) return;
@@ -241,12 +241,13 @@ export class FlowDb implements FlowchartModel {
       edge.stroke = type.stroke;
       edge.length = type.length! > 10 ? 10 : type.length;
     }
+    const pair = start + '\0' + end;
+    const count = this.pairCount.get(pair) ?? 0;
     if (id && !this.edgeById.has(id)) {
       edge.id = id;
       edge.isUserDefinedId = true;
     } else {
-      const existing = this.pairCount.get(start + '\0' + end) ?? 0;
-      edge.id = `L_${start}_${end}_${existing === 0 ? 0 : existing + 1}`;
+      edge.id = `L_${start}_${end}_${count === 0 ? 0 : count + 1}`;
     }
 
     const max = this.options.maxEdges;
@@ -258,8 +259,7 @@ export class FlowDb implements FlowchartModel {
       );
     }
     this.edges.push(edge);
-    const pair = start + '\0' + end;
-    this.pairCount.set(pair, (this.pairCount.get(pair) ?? 0) + 1);
+    this.pairCount.set(pair, count + 1);
     if (!this.edgeById.has(edge.id!)) this.edgeById.set(edge.id!, edge);
   }
 

@@ -118,6 +118,7 @@ Elements in the SVG have class names. Use them to style one kind of element with
 | `pele-label` | The text of a node label |
 | `pele-marker` | An arrowhead or other edge marker |
 | `pele-icon` | An icon |
+| `pele-math` | A math expression |
 
 Use `data-id` to target a node by its source id:
 

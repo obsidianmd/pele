@@ -5,6 +5,7 @@ import { renderEr } from './render.js';
 
 export const er: Diagram<ErDb> = {
   type: 'er',
+  math: true,
   parse(source, _config, title) {
     const db = new ErDb();
     if (title) db.title = title;

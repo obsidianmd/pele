@@ -1,8 +1,9 @@
 import type { Config } from '../../preprocess.js';
+import { titleLabel } from '../../svg/title.js';
 import { esc, escText, labelSvg, num } from '../../svg/builder.js';
 import { ARROW, marker } from '../../svg/edges.js';
 import { svgDocument } from '../../svg/root.js';
-import { RADIUS, classNames, resolveStyle } from '../../svg/theme.js';
+import { ROUNDED, classNames, resolveStyle, rounded } from '../../svg/theme.js';
 import { layoutLabel, type Label } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
 import type { RenderOptions, Rendered } from '../../types.js';
@@ -217,7 +218,7 @@ function draw(db: SeqDb, config: Config, options: RenderOptions, tight: boolean)
   const size = options.fontSize ?? 16;
   const small = Math.round(size * 0.875);
   const tiny = Math.round(size * 0.75);
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const icons = options.icons;
   const pad = options.padding ?? 8;
   const mirror = conf.mirrorActors !== false;
@@ -593,11 +594,9 @@ function draw(db: SeqDb, config: Config, options: RenderOptions, tight: boolean)
       const w = num(frame.x1 - frame.x0);
       if (frame.kind === 'rect') {
         const fill = frame.fill ? resolveStyle([`fill:${frame.fill}`]).shape : '';
-        rectsOut.push(`<rect class="pele-rect" x="${x}" y="${num(frame.top)}" width="${w}" height="${num(bottom - frame.top)}" rx="${RADIUS}"${
-          fill ? '' : ' fill-opacity="0.5"'
-        }${fill}/>`);
+        rectsOut.push(`<rect class="pele-rect" x="${x}" y="${num(frame.top)}" width="${w}" height="${num(bottom - frame.top)}"${rounded((fill ? '' : ' fill-opacity="0.5"') + fill)}/>`);
       } else {
-        let inner = `<rect x="${x}" y="${num(frame.top)}" width="${w}" height="${num(bottom - frame.top)}" rx="${RADIUS}" fill="none"/>`;
+        let inner = `<rect x="${x}" y="${num(frame.top)}" width="${w}" height="${num(bottom - frame.top)}" fill="none"${ROUNDED}/>`;
         for (let k = 0; k < frame.dividerY.length; k++) {
           const dy = frame.dividerY[k];
           const label = frame.dividerLabels[k];
@@ -606,7 +605,7 @@ function draw(db: SeqDb, config: Config, options: RenderOptions, tight: boolean)
             backed(label, frame.x0 + 8 + label.width / 2, dy + 2 + label.height / 2, ' class="pele-frame-label" fill="var(--_m)" stroke="none"');
         }
         inner +=
-          `<rect x="${x}" y="${num(frame.top)}" width="${num(frame.tabW)}" height="${TAB_H}" rx="${RADIUS}" fill="var(--_s)"/>` +
+          `<rect x="${x}" y="${num(frame.top)}" width="${num(frame.tabW)}" height="${TAB_H}" fill="var(--_s)"${ROUNDED}/>` +
           `<text class="pele-frame-kind" x="${num(frame.x0 + frame.tabW / 2)}" y="${num(
             frame.top + TAB_H / 2 + tiny * 0.35
           )}" text-anchor="middle" font-size="${tiny}" font-weight="var(--_hw)" fill="var(--_m)" stroke="none">${frame.kind}</text>` +
@@ -636,7 +635,7 @@ function draw(db: SeqDb, config: Config, options: RenderOptions, tight: boolean)
       extend(x, x + view.w);
       notesOut +=
         `<g class="pele-note" data-id="i${escText(m.id)}">` +
-        `<rect x="${num(x)}" y="${num(top)}" width="${num(view.w)}" height="${num(h)}" rx="${RADIUS}"/>` +
+        `<rect x="${num(x)}" y="${num(top)}" width="${num(view.w)}" height="${num(h)}"${ROUNDED}/>` +
         labelSvg(view.label, x + view.w / 2, top + h / 2, ' class="pele-label" stroke="none" fill="var(--_fg)"', icons) +
         '</g>';
       y = top + h;
@@ -699,7 +698,8 @@ function draw(db: SeqDb, config: Config, options: RenderOptions, tight: boolean)
             icons
           )}</g>`;
         }
-        lineY = bottom;
+        // A label taller than the loop reaches below it, so the next row starts under the label.
+        lineY = Math.max(bottom, (top + bottom) / 2 + label.height / 2);
       } else {
         const dir = b.x > a.x ? 1 : -1;
         const creating = b.createAt === i;
@@ -780,9 +780,7 @@ function draw(db: SeqDb, config: Config, options: RenderOptions, tight: boolean)
     const fill = run.box.fill === 'transparent' ? '' : resolveStyle([`fill:${run.box.fill}`]).shape;
     boxesOut +=
       `<g class="pele-cluster pele-box"${run.box.name ? ` data-id="${escText(run.box.name)}"` : ''}>` +
-      `<rect x="${num(x0)}" y="0" width="${num(x1 - x0)}" height="${num(bottom + boxPad)}" rx="${RADIUS}" fill="var(--_a)" stroke="var(--_b)"${
-        fill ? '' : ' fill-opacity="0.5"'
-      }${fill}/>` +
+      `<rect x="${num(x0)}" y="0" width="${num(x1 - x0)}" height="${num(bottom + boxPad)}" fill="var(--_a)" stroke="var(--_b)"${rounded((fill ? '' : ' fill-opacity="0.5"') + fill)}/>` +
       labelSvg(run.title, (x0 + x1) / 2, boxPad / 2 + 2 + run.title.height / 2, ' class="pele-cluster-label" fill="var(--_m)"', icons) +
       '</g>';
   }
@@ -790,7 +788,9 @@ function draw(db: SeqDb, config: Config, options: RenderOptions, tight: boolean)
 
   let minY = 0;
   let titleOut = '';
-  const title = text(db.title, size, false, tight ? titleRoom(options) : wrapW, Style.Bold);
+  const room = titleRoom(options);
+  const plainTitle = titleLabel(db.title, measurer, size, tight ? room : Infinity);
+  const title = tight ? breakLabel(plainTitle, measurer, Math.max(120, room)) : plainTitle;
   if (minX > maxX) extend(0, Math.max(title.width, 40));
   if (title.width > 0) {
     const cx = (minX + maxX) / 2;

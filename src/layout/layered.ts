@@ -39,6 +39,10 @@ export interface LNode {
   h: number;
   kind: Kind;
   pin: number;
+  // Port's cross-flow destination; NaN if unknown. Fully hinted port ranks keep this order.
+  hint: number;
+  // Initial cross-flow position; NaN if unknown. Used only when every node in a rank has one.
+  key: number;
   // How much of the side that edges meet may be shared out between them; 0 keeps them all at its middle.
   span: number;
   x: number;
@@ -79,15 +83,23 @@ export interface LayeredOptions {
   // head the same way sits half of this nearer their tails, so that each label is midway along
   // the line that shows, and the curves either side of it have the same room to turn in.
   headRoom?: number;
+  // Keep each group contiguous within ranks. `of` maps nodes to groups; `parent` maps groups
+  // to parents. Both use -1 for none.
+  groups?: { of: Int32Array; parent: Int32Array };
+  // Compute cross-flow positions in `x` without full routing.
+  orderOnly?: boolean;
 }
 
 export interface LayeredResult {
   width: number;
   height: number;
+  // With `orderOnly`: final crossings and crossings before grouping or reordering.
+  crossings?: number;
+  declared?: number;
 }
 
 export function lnode(w: number, h: number, kind: Kind = Kind.Node): LNode {
-  return { w, h, kind, pin: 0, span: 0, x: 0, y: 0, rank: 0 };
+  return { w, h, kind, pin: 0, hint: NaN, key: NaN, span: 0, x: 0, y: 0, rank: 0 };
 }
 
 export function ledge(tail: number, head: number, minlen = 1, labelW = 0, labelH = 0): LEdge {
@@ -160,6 +172,10 @@ const LEAN_CLEAR = 40;
 // Past this many edges across one gap, tracks are given out in a plain order: weighing every
 // pair of edges against each other would take too long.
 const MAX_WEIGHED = 400;
+// Reuse curve-sampling buffers across layouts.
+const SAMPLES = 16;
+const LINE_A = new Float64Array(2 * SAMPLES + 2);
+const LINE_B = new Float64Array(2 * SAMPLES + 2);
 
 const enum End {
   Held,
@@ -184,10 +200,52 @@ function sortRange(list: Int32Array, from: number, to: number, key: Int32Array |
   }
 }
 
+// Avoid the comparator overhead of built-in sort.
+function sortByBary(list: Int32Array, count: number, bary: Float64Array, pos: Int32Array, right: boolean, spare: Int32Array): void {
+  const before = (a: number, b: number): boolean => bary[a] < bary[b] || (bary[a] === bary[b] && (right ? pos[a] > pos[b] : pos[a] < pos[b]));
+  const RUN = 8;
+  for (let s = 0; s < count; s += RUN) {
+    for (let i = s + 1, end = Math.min(count, s + RUN); i < end; i++) {
+      const item = list[i];
+      let j = i - 1;
+      while (j >= s && before(item, list[j])) {
+        list[j + 1] = list[j];
+        j--;
+      }
+      list[j + 1] = item;
+    }
+  }
+  let from = list;
+  let to = spare;
+  for (let width = RUN; width < count; width *= 2) {
+    for (let s = 0; s < count; s += 2 * width) {
+      const mid = Math.min(count, s + width);
+      const end = Math.min(count, s + 2 * width);
+      let i = s;
+      let j = mid;
+      let k = s;
+      while (i < mid && j < end) to[k++] = before(from[j], from[i]) ? from[j++] : from[i++];
+      while (i < mid) to[k++] = from[i++];
+      while (j < end) to[k++] = from[j++];
+    }
+    const t = from;
+    from = to;
+    to = t;
+  }
+  if (from !== list) for (let i = 0; i < count; i++) list[i] = from[i];
+}
+
 export function layered(nodes: LNode[], edges: LEdge[], opt: LayeredOptions): LayeredResult {
   const real = nodes.length;
   if (real === 0) return { width: 0, height: 0 };
   const m = edges.length;
+  if (real === 1 && m === 0 && nodes[0].kind === Kind.Node) {
+    const node = nodes[0];
+    node.rank = 0;
+    node.x = node.w / 2;
+    node.y = node.h / 2;
+    return { width: node.w, height: node.h };
+  }
 
   // Every edge gets a middle rank of its own when labels or parallel edges need the room.
   let step = 1;
@@ -260,6 +318,8 @@ export function layered(nodes: LNode[], edges: LEdge[], opt: LayeredOptions): La
   const ETK = spans ? new Uint8Array(segments) : undefined;
   const firstSeg = new Int32Array(m).fill(-1);
   const lastSeg = new Int32Array(m).fill(-1);
+  const KEY = new Float64Array(n).fill(NaN);
+  for (let i = 0; i < real; i++) KEY[i] = nodes[i].key;
   let offsets = false;
   {
     let next = real;
@@ -293,6 +353,7 @@ export function layered(nodes: LNode[], edges: LEdge[], opt: LayeredOptions): La
       for (let r = ra + 1; r < rb; r++) {
         const d = next++;
         RANK[d] = r;
+        KEY[d] = KEY[a] + ((KEY[b] - KEY[a]) * (r - ra)) / (rb - ra);
         if (r === labelRank) {
           W[d] = e.labelW;
           H[d] = e.labelH;
@@ -315,6 +376,36 @@ export function layered(nodes: LNode[], edges: LEdge[], opt: LayeredOptions): La
       if (ETK && !(e.reversed ? e.tailFixed : e.headFixed)) ETK[ce] = e.reversed ? End.Leaves : End.Arrives;
       lastSeg[ei] = ce;
       ce++;
+    }
+  }
+
+  // Bends belong to the innermost group containing both edge endpoints.
+  let GRP: Int32Array | undefined;
+  if (opt.groups) {
+    const { of, parent } = opt.groups;
+    GRP = new Int32Array(n);
+    for (let i = 0; i < real; i++) GRP[i] = of[i];
+    const depth = (gr: number): number => {
+      let d = 0;
+      for (; gr >= 0; gr = parent[gr]) d++;
+      return d;
+    };
+    const lca = (x: number, y: number): number => {
+      let dx = depth(x);
+      let dy = depth(y);
+      for (; dx > dy; dx--) x = parent[x];
+      for (; dy > dx; dy--) y = parent[y];
+      while (x !== y) {
+        x = parent[x];
+        y = parent[y];
+      }
+      return x;
+    };
+    for (let ei = 0; ei < m; ei++) {
+      if (firstDummy[ei] < 0) continue;
+      const e = edges[ei];
+      const gr = lca(of[e.tail], of[e.head]);
+      for (let d = firstDummy[ei], end = d + span[ei] - 1; d < end; d++) GRP[d] = gr;
     }
   }
 
@@ -350,7 +441,7 @@ export function layered(nodes: LNode[], edges: LEdge[], opt: LayeredOptions): La
     const byRank = new Int32Array(n);
     const fill = layerStart.slice(0, maxRank + 1);
     for (let i = 0; i < n; i++) byRank[fill[RANK[i]]++] = i;
-    fill.set(layerStart.subarray(0, maxRank + 1));
+    for (let r = 0; r <= maxRank; r++) fill[r] = layerStart[r];
     const visited = new Uint8Array(n);
     const stack: number[] = [];
     for (let k = 0; k < n; k++) {
@@ -369,6 +460,20 @@ export function layered(nodes: LNode[], edges: LEdge[], opt: LayeredOptions): La
     }
   }
 
+  const sortRank = (r: number, key: (v: number) => number): boolean => {
+    const s = layerStart[r];
+    const e = layerStart[r + 1];
+    if (e - s < 2) return false;
+    for (let i = s; i < e; i++) if (Number.isNaN(key(order[i]))) return false;
+    const layer = Array.from(order.subarray(s, e));
+    const index = new Map<number, number>();
+    layer.forEach((v, i) => index.set(v, i));
+    layer.sort((a, b) => key(a) - key(b) || index.get(a)! - index.get(b)!);
+    order.set(layer, s);
+    return true;
+  };
+  for (let r = 0; r <= maxRank; r++) sortRank(r, (v) => KEY[v]);
+
   let pinned = false;
   for (let i = 0; i < real; i++) if (nodes[i].pin !== 0) pinned = true;
   if (pinned) {
@@ -381,6 +486,10 @@ export function layered(nodes: LNode[], edges: LEdge[], opt: LayeredOptions): La
       order.set(layer, layerStart[r]);
     }
   }
+  // Preserve port order to avoid crossings outside the group.
+  const fixed = new Uint8Array(maxRank + 1);
+  const hint = (v: number): number => (v < real && (nodes[v].kind === Kind.StartPort || nodes[v].kind === Kind.EndPort) ? nodes[v].hint : NaN);
+  for (const r of [0, maxRank]) if (sortRank(r, hint)) fixed[r] = 1;
   const setPositions = (): void => {
     for (let r = 0; r <= maxRank; r++) {
       const s = layerStart[r];
@@ -389,11 +498,28 @@ export function layered(nodes: LNode[], edges: LEdge[], opt: LayeredOptions): La
   };
   setPositions();
 
-  const g: Graph = { n, real, maxRank, W, KIND, RANK, EF, ET, EFD, ETD, succStart, succE, predStart, predE, layerStart, order, pos, offsets };
+  const g: Graph = { n, real, maxRank, W, KIND, RANK, EF, ET, EFD, ETD, succStart, succE, predStart, predE, layerStart, order, pos, offsets, fixed, GRP, groupParent: opt.groups?.parent };
 
+  let crossings = 0;
+  let declared = 0;
   if (segments > 0 && maxRank > 0) {
-    reduceCrossings(g, nodes);
+    [crossings, declared] = reduceCrossings(g, nodes);
     setPositions();
+  }
+  if (opt.orderOnly) {
+    // Points are (rank, cross-flow position) pairs.
+    const at = position(g, opt);
+    for (let i = 0; i < real; i++) nodes[i].x = at[i];
+    for (let ei = 0; ei < m; ei++) {
+      const e = edges[ei];
+      const a = e.reversed ? e.head : e.tail;
+      const b = e.reversed ? e.tail : e.head;
+      const pts = [RANK[a], at[a]];
+      if (!direct[ei] && firstDummy[ei] >= 0) for (let d = firstDummy[ei], end = d + span[ei] - 1; d < end; d++) pts.push(RANK[d], at[d]);
+      pts.push(RANK[b], at[b]);
+      e.points = pts;
+    }
+    return { width: 0, height: 0, crossings, declared };
   }
 
   if (EFK && ETK) spread(g, nodes, EFK, ETK);
@@ -663,6 +789,10 @@ interface Graph {
   order: Int32Array;
   pos: Int32Array;
   offsets: boolean;
+  // Ranks whose order must remain fixed.
+  fixed: Uint8Array;
+  GRP?: Int32Array;
+  groupParent?: Int32Array;
 }
 
 // Reverses the edges that close a cycle, found by depth-first search in declaration order.
@@ -808,8 +938,8 @@ export function rank(nodes: LNode[], edges: LEdge[], step: number): void {
 }
 
 // The ends of edges that may move along one side of a node (0 the side its edges arrive at, 1 the
-// other), in the order of the nodes at their other ends, so that no two cross. `room` receives
-// the least distance between each end and the one before it, and the result is their sum.
+// other), ordered by their opposite nodes to avoid crossings. `ids` and `room` must start empty.
+// `ids` receives the ends; `room` receives their minimum gaps. Returns the sum of the gaps.
 // When there is too little room for a full pitch between each pair, the edges that leave side by
 // side move closer together, since they have no arrowheads to keep apart. With less room still,
 // neighbours that run the same way share a place, which keeps an arrowhead apart from an edge
@@ -819,13 +949,11 @@ function sideEnds(g: Graph, v: number, side: number, span: number, kinds: Uint8A
   const list = side === 0 ? g.predE : g.succE;
   const other = side === 0 ? g.EF : g.ET;
   const pos = g.pos;
-  ids.length = 0;
   for (let k = start[v]; k < start[v + 1]; k++) if (kinds[list[k]] !== End.Held) ids.push(list[k]);
   if (ids.length < 2) return 0;
   ids.sort((a, b) => pos[other[a]] - pos[other[b]] || a - b);
   const fill = (share: (leaves: boolean, same: boolean) => number): number => {
     let total = 0;
-    room.length = ids.length;
     room[0] = 0;
     for (let k = 1; k < ids.length; k++) {
       const same = kinds[ids[k]] === kinds[ids[k - 1]];
@@ -846,12 +974,12 @@ function sideEnds(g: Graph, v: number, side: number, span: number, kinds: Uint8A
 // Gives the edges that meet one side of a node places of their own along it, around its middle.
 function spread(g: Graph, nodes: LNode[], EFK: Uint8Array, ETK: Uint8Array): void {
   const { real, W, EFD, ETD } = g;
-  const ids: number[] = [];
-  const room: number[] = [];
   for (let v = 0; v < real; v++) {
     const span = Math.min(nodes[v].span, W[v]);
     if (span <= 0 || nodes[v].kind !== Kind.Node) continue;
     for (let side = 0; side < 2; side++) {
+      const ids: number[] = [];
+      const room: number[] = [];
       const total = sideEnds(g, v, side, span, side === 0 ? ETK : EFK, ids, room);
       if (total === 0) continue;
       const dx = side === 0 ? ETD : EFD;
@@ -971,11 +1099,6 @@ function alignLabels(g: Graph, nodes: LNode[], xs: Float64Array, free: [Int32Arr
 // ends keep clear of the points where other edges pass through its border.
 function settle(g: Graph, nodes: LNode[], xs: Float64Array, EFK: Uint8Array, ETK: Uint8Array, free: [Int32Array, Int32Array], empty: Uint8Array | undefined): void {
   const { real, W, EF, ET, EFD, ETD, succStart, succE, predStart, predE, pos } = g;
-  const ids: number[] = [];
-  const room: number[] = [];
-  const all: number[] = [];
-  const sum: number[] = [];
-  const count: number[] = [];
   // Where the end of segment `e` on node `v` should be, from the middle of its side. The edge is
   // followed up from the segment (side 0) or down, past the bends in ranks that hold nothing
   // else, to where it next comes to a point that is held in place or to another node's side.
@@ -1004,71 +1127,76 @@ function settle(g: Graph, nodes: LNode[], xs: Float64Array, EFK: Uint8Array, ETK
     const place = (xs[v] * width + middle * span) / (width + span);
     return Math.max(lo, Math.min(hi, place)) - xs[v];
   };
+  // End order and spacing stay fixed across passes; held ends divide free ends into runs.
+  const sides: { v: number; side: number; span: number; ids: number[]; room: number[]; all: number[] }[] = [];
+  for (let v = 0; v < real; v++) {
+    const span = Math.min(nodes[v].span, W[v]);
+    if (span <= 0 || nodes[v].kind !== Kind.Node) continue;
+    for (let side = 0; side < 2; side++) {
+      const other = side === 0 ? EF : ET;
+      const start = side === 0 ? predStart : succStart;
+      const list = side === 0 ? predE : succE;
+      const ids: number[] = [];
+      const room: number[] = [];
+      sideEnds(g, v, side, span, side === 0 ? ETK : EFK, ids, room);
+      if (ids.length === 0) continue;
+      if (ids.length === 1) room[0] = 0;
+      const all: number[] = [];
+      for (let k = start[v]; k < start[v + 1]; k++) all.push(list[k]);
+      all.sort((a, b) => pos[other[a]] - pos[other[b]] || a - b);
+      sides.push({ v, side, span, ids, room, all });
+    }
+  }
   // The ends of an edge follow each other, so the nodes are gone over until none moves: a few
   // times at most, in practice.
   for (let pass = 0, moved = true; moved && pass < 6; pass++) {
     moved = false;
-    for (let v = 0; v < real; v++) {
-      const span = Math.min(nodes[v].span, W[v]);
-      if (span <= 0 || nodes[v].kind !== Kind.Node) continue;
-      for (let side = 0; side < 2; side++) {
-        const kinds = side === 0 ? ETK : EFK;
-        const dx = side === 0 ? ETD : EFD;
-        const other = side === 0 ? EF : ET;
-        const start = side === 0 ? predStart : succStart;
-        const list = side === 0 ? predE : succE;
-        sideEnds(g, v, side, span, kinds, ids, room);
-        if (ids.length === 0) continue;
-        if (ids.length === 1) room[0] = 0;
-        // Every end on the side in order, the held ones among them, which divide the rest into runs.
-        all.length = 0;
-        for (let k = start[v]; k < start[v + 1]; k++) all.push(list[k]);
-        all.sort((a, b) => pos[other[a]] - pos[other[b]] || a - b);
-        let k = 0;
-        let lo = -span / 2;
-        for (let i = 0; i <= all.length; i++) {
-          const held = i < all.length && kinds[all[i]] === End.Held;
-          if (i < all.length && !held) continue;
-          // The run of free ends before this point is ids[k..], as many as were passed since the last held end.
-          let size = 0;
-          for (let j = i - 1; j >= 0 && kinds[all[j]] !== End.Held; j--) size++;
-          const hi = held ? dx[all[i]] - PORT_PITCH : span / 2;
-          if (size > 0) {
-            // The places nearest the wanted ones that keep the order and the room between
-            // neighbours: an isotonic fit, by pooling neighbours that would otherwise be too close.
-            sum.length = 0;
-            count.length = 0;
-            let before = 0;
-            for (let j = 0; j < size; j++) {
-              if (j > 0) before += room[k + j];
-              sum.push(wanted(ids[k + j], side, v, span, pass > 0) - before);
-              count.push(1);
-              // Ends that share a place for want of room stay together.
-              let together = j > 0 && room[k + j] === 0;
-              while (sum.length > 1 && (together || sum[sum.length - 2] / count[count.length - 2] > sum[sum.length - 1] / count[count.length - 1])) {
-                together = false;
-                const top = sum.pop()!;
-                const pooled = count.pop()!;
-                sum[sum.length - 1] += top;
-                count[count.length - 1] += pooled;
-              }
+    for (const { v, side, span, ids, room, all } of sides) {
+      const kinds = side === 0 ? ETK : EFK;
+      const dx = side === 0 ? ETD : EFD;
+      let k = 0;
+      let lo = -span / 2;
+      for (let i = 0; i <= all.length; i++) {
+        const held = i < all.length && kinds[all[i]] === End.Held;
+        if (i < all.length && !held) continue;
+        // Free ends since the last held end occupy ids[k..k + size).
+        let size = 0;
+        for (let j = i - 1; j >= 0 && kinds[all[j]] !== End.Held; j--) size++;
+        const hi = held ? dx[all[i]] - PORT_PITCH : span / 2;
+        if (size > 0) {
+          // Isotonic fitting preserves order and spacing by pooling neighbours that are too close.
+          const sum: number[] = [];
+          const count: number[] = [];
+          let before = 0;
+          for (let j = 0; j < size; j++) {
+            if (j > 0) before += room[k + j];
+            sum.push(wanted(ids[k + j], side, v, span, pass > 0) - before);
+            count.push(1);
+            // Keep ends together when spacing forced them to share a place.
+            let together = j > 0 && room[k + j] === 0;
+            while (sum.length > 1 && (together || sum[sum.length - 2] / count[count.length - 2] > sum[sum.length - 1] / count[count.length - 1])) {
+              together = false;
+              const top = sum.pop()!;
+              const pooled = count.pop()!;
+              sum[sum.length - 1] += top;
+              count[count.length - 1] += pooled;
             }
-            const total = before;
-            let j = 0;
-            before = 0;
-            for (let b = 0; b < sum.length; b++) {
-              // With too little room between two held ends, the run sits in the middle of what there is.
-              const level = hi - total < lo ? (lo + hi - total) / 2 : Math.max(lo, Math.min(hi - total, sum[b] / count[b]));
-              for (let c = 0; c < count[b]; c++, j++) {
-                if (j > 0) before += room[k + j];
-                if (Math.abs(dx[ids[k + j]] - level - before) > 0.01) moved = true;
-                dx[ids[k + j]] = level + before;
-              }
-            }
-            k += size;
           }
-          if (held) lo = dx[all[i]] + PORT_PITCH;
+          const total = before;
+          let j = 0;
+          before = 0;
+          for (let b = 0; b < sum.length; b++) {
+            // Center the run if it cannot fit between held ends.
+            const level = hi - total < lo ? (lo + hi - total) / 2 : Math.max(lo, Math.min(hi - total, sum[b] / count[b]));
+            for (let c = 0; c < count[b]; c++, j++) {
+              if (j > 0) before += room[k + j];
+              if (Math.abs(dx[ids[k + j]] - level - before) > 0.01) moved = true;
+              dx[ids[k + j]] = level + before;
+            }
+          }
+          k += size;
         }
+        if (held) lo = dx[all[i]] + PORT_PITCH;
       }
     }
   }
@@ -1189,6 +1317,7 @@ function assignTracks(pieces: Pieces, trackCount: Int32Array, curved: boolean, r
     if (list) list.push(k);
     else byRank.set(rank[k], [k]);
   }
+  if (byRank.size === 0) return;
   // The pieces are compared pair by pair, so where each begins and ends across the flow is worked out once.
   const LO = new Float64Array(total);
   const HI = new Float64Array(total);
@@ -1205,6 +1334,20 @@ function assignTracks(pieces: Pieces, trackCount: Int32Array, curved: boolean, r
   const meet = (a: number, b: number): boolean => overlap(a, b) || within(to[a], b) + within(from[b], a) + within(to[b], a) + within(from[a], b) > 0;
   // How often a and b cross with a on the higher track: a's way down through b, and b's way down to itself through a.
   const crossings = (a: number, b: number): number => within(to[a], b) + within(from[b], a);
+  // Returns pairs of list indices, smaller first. Omitted pairs cannot meet or clash.
+  const nearPairs = (list: number[]): number[] => {
+    const byLo = list.map((_, i) => i).sort((a, b) => LO[list[a]] - LO[list[b]]);
+    const pairs: number[] = [];
+    for (let x = 0; x < byLo.length; x++) {
+      const i = byLo[x];
+      const reach = HI[list[i]] + 4 * IN_LINE;
+      for (let y = x + 1; y < byLo.length && LO[list[byLo[y]]] <= reach; y++) {
+        const j = byLo[y];
+        pairs.push(Math.min(i, j), Math.max(i, j));
+      }
+    }
+    return pairs;
+  };
 
   // Gives the pieces of one gap in `list` their tracks, and each the number of tracks that the
   // pieces it has to do with take between them, counting its own from the first of those.
@@ -1220,8 +1363,19 @@ function assignTracks(pieces: Pieces, trackCount: Int32Array, curved: boolean, r
       while (group[i] !== i) i = group[i] = group[group[i]];
       return i;
     };
-    let sequence = list;
-    if (count <= MAX_WEIGHED) {
+    const weighed = count <= MAX_WEIGHED;
+    // Avoid storing quadratically many pairs in dense gaps.
+    const pairs = weighed ? nearPairs(list) : [];
+    const clashes: number[][] = weighed ? list.map(() => []) : [];
+    for (let p = 0; p < pairs.length; p += 2) {
+      const i = pairs[p];
+      const j = pairs[p + 1];
+      if (!clash(list[i], list[j])) continue;
+      clashes[i].push(j);
+      clashes[j].push(i);
+    }
+    let sequence = list.map((_, i) => i);
+    if (weighed) {
       // above[j] lists the pieces that should be above list[j]. The order follows as many of
       // these as it can: a piece is placed once all that should be above it are, and when
       // none is free, the one with the fewest still waiting.
@@ -1231,24 +1385,24 @@ function assignTracks(pieces: Pieces, trackCount: Int32Array, curved: boolean, r
         above.push([]);
         after.push([]);
       }
-      for (let i = 0; i < count; i++) {
-        for (let j = i + 1; j < count; j++) {
-          const a = list[i];
-          const b = list[j];
-          if (!meet(a, b)) continue;
-          group[find(i)] = find(j);
-          const ab = crossings(a, b);
-          const ba = crossings(b, a);
-          if (ab === ba) continue;
-          const first = ab < ba ? i : j;
-          const second = ab < ba ? j : i;
-          above[second].push(first);
-          after[first].push(second);
-          waiting[second]++;
-        }
+      for (let p = 0; p < pairs.length; p += 2) {
+        const i = pairs[p];
+        const j = pairs[p + 1];
+        const a = list[i];
+        const b = list[j];
+        if (!meet(a, b)) continue;
+        group[find(i)] = find(j);
+        const ab = crossings(a, b);
+        const ba = crossings(b, a);
+        if (ab === ba) continue;
+        const first = ab < ba ? i : j;
+        const second = ab < ba ? j : i;
+        above[second].push(first);
+        after[first].push(second);
+        waiting[second]++;
       }
       const placed = new Uint8Array(count);
-      const result: number[] = [];
+      sequence = [];
       for (let done = 0; done < count; done++) {
         let pick = -1;
         for (let i = 0; i < count; i++) {
@@ -1257,47 +1411,43 @@ function assignTracks(pieces: Pieces, trackCount: Int32Array, curved: boolean, r
           if (waiting[i] === 0) break;
         }
         placed[pick] = 1;
-        result.push(pick);
+        sequence.push(pick);
         for (const j of after[pick]) waiting[j]--;
       }
-      sequence = result.map((i) => list[i]);
     }
-    // Each piece takes the first track below those it should be under that has room for it.
-    const place = new Map<number, number>();
-    list.forEach((k, i) => place.set(k, i));
-    const rows: number[][] = [];
-    for (const k of sequence) {
+    const taken = new Set<number>();
+    const onTrack: number[][] = [];
+    let rows = 0;
+    for (const at of sequence) {
+      const k = list[at];
       let t = 0;
-      for (const i of above[place.get(k)!] ?? []) if (track[list[i]] >= t) t = track[list[i]] + 1;
-      for (; ; t++) {
-        const row = (rows[t] ??= []);
-        let free = true;
-        for (const other of row) if (clash(k, other)) free = false;
-        if (free) {
-          row.push(k);
-          break;
-        }
+      for (const i of above[at] ?? []) if (track[list[i]] >= t) t = track[list[i]] + 1;
+      if (weighed) {
+        taken.clear();
+        for (const i of clashes[at]) taken.add(track[list[i]]);
+        while (taken.has(t)) t++;
+      } else {
+        while (onTrack[t]?.some((other) => clash(k, other))) t++;
+        (onTrack[t] ??= []).push(k);
       }
       track[k] = t;
+      if (t >= rows) rows = t + 1;
     }
-    const first = new Map<number, number>();
-    const lastOf = new Map<number, number>();
-    list.forEach((k, i) => {
+    const first = new Int32Array(count).fill(rows);
+    const last = new Int32Array(count).fill(-1);
+    for (let i = 0; i < count; i++) {
       const root = find(i);
-      first.set(root, Math.min(first.get(root) ?? Infinity, track[k]));
-      lastOf.set(root, Math.max(lastOf.get(root) ?? -Infinity, track[k]));
-    });
-    list.forEach((k, i) => {
+      first[root] = Math.min(first[root], track[list[i]]);
+      last[root] = Math.max(last[root], track[list[i]]);
+    }
+    for (let i = 0; i < count; i++) {
       const root = find(i);
-      levels[k] = lastOf.get(root)! - first.get(root)! + 1;
-      if (curved) track[k] -= first.get(root)!;
-    });
-    return rows.length;
+      levels[list[i]] = last[root] - first[root] + 1;
+      if (curved) track[list[i]] -= first[root];
+    }
+    return rows;
   };
 
-  // The least distance between a and b as plain curves across a gap that leaves them `height`
-  // to turn in: between points along each and the other drawn as a run of short lines.
-  const SAMPLES = 16;
   const sample = (k: number, h: number, out: Float64Array): void => {
     const c = ease(to[k] - from[k], h);
     for (let i = 0; i <= SAMPLES; i++) {
@@ -1307,10 +1457,9 @@ function assignTracks(pieces: Pieces, trackCount: Int32Array, curved: boolean, r
       out[2 * i + 1] = h * (3 * c * t * u * u + 3 * (1 - c) * t * t * u + t * t * t);
     }
   };
-  const lineA = new Float64Array(2 * SAMPLES + 2);
-  const lineB = new Float64Array(2 * SAMPLES + 2);
-  const reach = (points: Float64Array, line: Float64Array): number => {
-    let least = Infinity;
+  const reaches = (points: Float64Array, line: Float64Array, limit: number): boolean => {
+    // Allow rounding error in the cheap distance check before calling Math.hypot.
+    const bound = limit * limit * (1 + 1e-9);
     for (let i = 0; i <= SAMPLES; i++) {
       const px = points[2 * i];
       const py = points[2 * i + 1];
@@ -1318,17 +1467,18 @@ function assignTracks(pieces: Pieces, trackCount: Int32Array, curved: boolean, r
         const dx = line[2 * j + 2] - line[2 * j];
         const dy = line[2 * j + 3] - line[2 * j + 1];
         const t = Math.max(0, Math.min(1, ((px - line[2 * j]) * dx + (py - line[2 * j + 1]) * dy) / (dx * dx + dy * dy || 1)));
-        const d = Math.hypot(px - line[2 * j] - t * dx, py - line[2 * j + 1] - t * dy);
-        if (d < least) least = d;
+        const ex = px - line[2 * j] - t * dx;
+        const ey = py - line[2 * j + 1] - t * dy;
+        if (ex * ex + ey * ey < bound && Math.hypot(ex, ey) < limit) return true;
       }
     }
-    return least;
+    return false;
   };
-  const nearest = (a: number, b: number, height: number): number => {
+  const near = (a: number, b: number, height: number, limit: number): boolean => {
     const h = Math.max(height / 2, height - 2 * LEVEL_LEAD);
-    sample(a, h, lineA);
-    sample(b, h, lineB);
-    return Math.min(reach(lineA, lineB), reach(lineB, lineA));
+    sample(a, h, LINE_A);
+    sample(b, h, LINE_B);
+    return reaches(LINE_A, LINE_B, limit) || reaches(LINE_B, LINE_A, limit);
   };
 
   for (const [r, all] of byRank) {
@@ -1343,13 +1493,12 @@ function assignTracks(pieces: Pieces, trackCount: Int32Array, curved: boolean, r
     const far = all.filter((k) => wide[k] === 1);
     lay(far);
     const level = new Set(far.filter((k) => levels[k] > 1));
-    for (let i = 0; i < all.length; i++) {
-      for (let j = i + 1; j < all.length; j++) {
-        const a = all[i];
-        const b = all[j];
-        if ((level.has(a) && level.has(b)) || !clash(a, b) || from[a] < to[a] !== from[b] < to[b]) continue;
-        if (nearest(a, b, room[r]) < (wide[a] === 1 || wide[b] === 1 ? LEVEL_CLEAR : LEVEL_TOUCH)) level.add(a).add(b);
-      }
+    const pairs = nearPairs(all);
+    for (let p = 0; p < pairs.length; p += 2) {
+      const a = all[pairs[p]];
+      const b = all[pairs[p + 1]];
+      if ((level.has(a) && level.has(b)) || !clash(a, b) || from[a] < to[a] !== from[b] < to[b]) continue;
+      if (near(a, b, room[r], wide[a] === 1 || wide[b] === 1 ? LEVEL_CLEAR : LEVEL_TOUCH)) level.add(a).add(b);
     }
     for (const k of far) {
       track[k] = -1;
@@ -1358,15 +1507,15 @@ function assignTracks(pieces: Pieces, trackCount: Int32Array, curved: boolean, r
     if (level.size === 0) continue;
     let crossing = 0;
     let alongside = 0;
-    const turning = [...level];
-    for (let i = 0; i < turning.length; i++) {
-      for (let j = i + 1; j < turning.length; j++) {
-        const a = turning[i];
-        const b = turning[j];
+    const beside = new Set<number>();
+    for (let p = 0; p < pairs.length; p += 2) {
+      const a = all[pairs[p]];
+      const b = all[pairs[p + 1]];
+      if (level.has(a) && level.has(b)) {
         if (!overlap(a, b)) continue;
         if (from[a] < to[a] !== from[b] < to[b]) crossing++;
         else if (!mates(a, b)) alongside++;
-      }
+      } else if ((level.has(a) || level.has(b)) && meet(a, b)) beside.add(a).add(b);
     }
     if (crossing > alongside) {
       for (const k of all) if ((HI[k] - LO[k]) * CROSSED_SLOPE > tall[r]) tall[r] = (HI[k] - LO[k]) * CROSSED_SLOPE;
@@ -1374,11 +1523,7 @@ function assignTracks(pieces: Pieces, trackCount: Int32Array, curved: boolean, r
     }
     // With them go the short pieces that could cross one of them, so that each has its place
     // among the levels and crosses none.
-    const beside = (k: number): boolean => {
-      for (const j of level) if (meet(k, j)) return true;
-      return false;
-    };
-    const members = all.filter((k) => level.has(k) || (wide[k] !== 1 && beside(k)));
+    const members = all.filter((k) => level.has(k) || (wide[k] !== 1 && beside.has(k)));
     lay(members);
     let most = 0;
     for (const k of members) if (levels[k] > most) most = levels[k];
@@ -1498,12 +1643,40 @@ function pastLabels(g: Graph, xs: Float64Array, firstDummy: Int32Array, span: In
   }
 }
 
-function reduceCrossings(g: Graph, nodes: LNode[]): void {
-  const { n, real, maxRank, W, EF, ET, EFD, ETD, succStart, succE, predStart, predE, layerStart, order, pos, offsets } = g;
+// Returns [final crossings, crossings before grouping or reordering].
+function reduceCrossings(g: Graph, nodes: LNode[]): [number, number] {
+  const { n, real, maxRank, W, EF, ET, EFD, ETD, succStart, succE, predStart, predE, layerStart, order, pos, offsets, fixed, GRP, groupParent } = g;
   let widest = 0;
   for (let r = 0; r <= maxRank; r++) widest = Math.max(widest, layerStart[r + 1] - layerStart[r]);
+  if (widest < 2) return [0, 0];
   // With offsets, edges that reach one node at different offsets take separate places along it.
   const place = offsets ? new Int32Array(EF.length) : undefined;
+  // Local offset indices and counts do not depend on node order.
+  const placeIn = new Int32Array(place ? EF.length : 0);
+  const places = new Int32Array(place ? n : 0);
+  const leaving = place ? succE.slice() : succE;
+  const mixed = new Uint8Array(place ? n : 0);
+  if (place) {
+    const arriving = predE.slice();
+    const byOffset = (list: Int32Array, from: number, to: number, dx: Float64Array): boolean => {
+      for (let k = from + 1; k < to; k++) {
+        if (dx[list[k]] === dx[list[from]]) continue;
+        list.subarray(from, to).sort((a, b) => dx[a] - dx[b]);
+        return true;
+      }
+      return false;
+    };
+    for (let v = 0; v < n; v++) {
+      places[v] = 1;
+      if (byOffset(arriving, predStart[v], predStart[v + 1], ETD)) {
+        for (let k = predStart[v] + 1; k < predStart[v + 1]; k++) {
+          if (ETD[arriving[k]] !== ETD[arriving[k - 1]]) places[v]++;
+          placeIn[arriving[k]] = places[v] - 1;
+        }
+      }
+      if (byOffset(leaving, succStart[v], succStart[v + 1], EFD)) mixed[v] = 1;
+    }
+  }
   let size = 1;
   while (size < (place ? widest + EF.length : widest)) size <<= 1;
   const tree = new Int32Array(2 * size);
@@ -1514,25 +1687,13 @@ function reduceCrossings(g: Graph, nodes: LNode[]): void {
     for (let r = 0; r < maxRank; r++) {
       let southLen = layerStart[r + 2] - layerStart[r + 1];
       if (place) {
-        let places = 0;
+        let next = 0;
         for (let i = layerStart[r + 1]; i < layerStart[r + 2]; i++) {
-          const from = predStart[order[i]];
-          const to = predStart[order[i] + 1];
-          let mixed = false;
-          for (let k = from + 1; k < to; k++) if (ETD[predE[k]] !== ETD[predE[from]]) mixed = true;
-          if (mixed) {
-            const ids = Array.from(predE.subarray(from, to));
-            ids.sort((a, b) => ETD[a] - ETD[b]);
-            for (let k = 0; k < ids.length; k++) {
-              if (k > 0 && ETD[ids[k]] !== ETD[ids[k - 1]]) places++;
-              place[ids[k]] = places;
-            }
-          } else {
-            for (let k = from; k < to; k++) place[predE[k]] = places;
-          }
-          places++;
+          const v = order[i];
+          for (let k = predStart[v]; k < predStart[v + 1]; k++) place[predE[k]] = next + placeIn[predE[k]];
+          next += places[v];
         }
-        southLen = places;
+        southLen = next;
       }
       if (southLen < 2) continue;
       let t = 0;
@@ -1541,15 +1702,21 @@ function reduceCrossings(g: Graph, nodes: LNode[]): void {
         const from = succStart[v];
         const to = succStart[v + 1];
         const t0 = t;
-        for (let k = from; k < to; k++) targets[t++] = place ? place[succE[k]] : pos[ET[succE[k]]];
+        for (let k = from; k < to; k++) targets[t++] = place ? place[leaving[k]] : pos[ET[succE[k]]];
         const d = t - t0;
         if (d < 2) continue;
-        let mixed = false;
-        if (place) for (let k = from + 1; k < to; k++) if (EFD[succE[k]] !== EFD[succE[from]]) mixed = true;
-        if (place && mixed) {
-          const ids = Array.from(succE.subarray(from, to));
-          ids.sort((a, b) => EFD[a] - EFD[b] || place[a] - place[b]);
-          for (let k = 0; k < d; k++) targets[t0 + k] = place[ids[k]];
+        if (place && mixed[v]) {
+          // Sort equal-offset edges by destination to avoid counting shared endpoints as crossings.
+          for (let a = t0 + 1; a < t; a++) {
+            const item = targets[a];
+            const dx = EFD[leaving[from + a - t0]];
+            let b = a - 1;
+            while (b >= t0 && EFD[leaving[from + b - t0]] === dx && targets[b] > item) {
+              targets[b + 1] = targets[b];
+              b--;
+            }
+            targets[b + 1] = item;
+          }
         } else if (d <= 12) {
           for (let a = t0 + 1; a < t; a++) {
             const item = targets[a];
@@ -1581,13 +1748,77 @@ function reduceCrossings(g: Graph, nodes: LNode[]): void {
     return total;
   };
 
-  let best = count();
-  if (best === 0) return;
-  const bestOrder = order.slice();
+  const declared = count();
   const bary = new Float64Array(n);
   const moving = new Int32Array(widest);
-  const leftBias = (a: number, b: number): number => bary[a] - bary[b] || pos[a] - pos[b];
-  const rightBias = (a: number, b: number): number => bary[a] - bary[b] || pos[b] - pos[a];
+  const spare = new Int32Array(widest);
+
+  // Keep groups contiguous, ordering each by its mean key.
+  const groups = groupParent ? groupParent.length : 0;
+  const depth = new Int32Array(groups);
+  for (let gr = 0; gr < groups; gr++) for (let p = gr; p >= 0; p = groupParent![p]) depth[gr]++;
+  const groupSum = new Float64Array(groups);
+  const groupCount = new Int32Array(groups);
+  const groupFirst = new Int32Array(groups);
+  const arrange = (r: number, key: Float64Array): void => {
+    const s = layerStart[r];
+    const e = layerStart[r + 1];
+    for (let i = s; i < e; i++) {
+      for (let gr = GRP![order[i]]; gr >= 0; gr = groupParent![gr]) {
+        groupSum[gr] = 0;
+        groupCount[gr] = 0;
+      }
+    }
+    for (let i = s; i < e; i++) {
+      const v = order[i];
+      for (let gr = GRP![v]; gr >= 0; gr = groupParent![gr]) {
+        if (groupCount[gr] === 0) groupFirst[gr] = i;
+        groupSum[gr] += key[v];
+        groupCount[gr]++;
+      }
+    }
+    // Compare siblings in their nearest common group; group items use n + group ID.
+    const value = (item: number): number => (item >= n ? groupSum[item - n] / groupCount[item - n] : key[item]);
+    const first = (item: number): number => (item >= n ? groupFirst[item - n] : s + pos[item]);
+    const compare = (a: number, b: number): number => {
+      let ia = a;
+      let ib = b;
+      let ca = GRP![a];
+      let cb = GRP![b];
+      let da = ca < 0 ? 0 : depth[ca];
+      let db = cb < 0 ? 0 : depth[cb];
+      for (; da > db; da--) {
+        ia = n + ca;
+        ca = groupParent![ca];
+      }
+      for (; db > da; db--) {
+        ib = n + cb;
+        cb = groupParent![cb];
+      }
+      while (ca !== cb) {
+        ia = n + ca;
+        ca = groupParent![ca];
+        ib = n + cb;
+        cb = groupParent![cb];
+      }
+      return value(ia) - value(ib) || first(ia) - first(ib);
+    };
+    const row = Array.from(order.subarray(s, e)).sort(compare);
+    order.set(row, s);
+    for (let i = s; i < e; i++) pos[order[i]] = i - s;
+  };
+  if (GRP) {
+    const at = new Float64Array(n);
+    for (let r = 0; r <= maxRank; r++) {
+      for (let i = layerStart[r]; i < layerStart[r + 1]; i++) at[order[i]] = i - layerStart[r];
+      arrange(r, at);
+    }
+  }
+  let best = GRP ? count() : declared;
+  if (best === 0) return [0, declared];
+  const bestOrder = order.slice();
+  // Require improvements over both the grouped and ungrouped starting orders.
+  const start = Math.min(best, declared);
 
   const sweep = (down: boolean, biasRight: boolean): void => {
     const start = down ? predStart : succStart;
@@ -1596,6 +1827,7 @@ function reduceCrossings(g: Graph, nodes: LNode[]): void {
     const otherDx = down ? EFD : ETD;
     for (let step = 1; step <= maxRank; step++) {
       const r = down ? step : maxRank - step;
+      if (fixed[r]) continue;
       const s = layerStart[r];
       const e = layerStart[r + 1];
       let movable = 0;
@@ -1610,6 +1842,12 @@ function reduceCrossings(g: Graph, nodes: LNode[]): void {
         const from = start[v];
         const to = start[v + 1];
         if (from === to) {
+          if (GRP) {
+            // Preserve relative position when there are no neighbours in the adjacent rank.
+            const across = down ? layerStart[r] - layerStart[r - 1] : layerStart[r + 2] - layerStart[r + 1];
+            bary[v] = ((i - s) * across) / (e - s);
+            continue;
+          }
           bary[v] = -1;
           continue;
         }
@@ -1622,8 +1860,12 @@ function reduceCrossings(g: Graph, nodes: LNode[]): void {
         bary[v] = sum / (to - from);
         moving[movable++] = v;
       }
+      if (GRP) {
+        arrange(r, bary);
+        continue;
+      }
       if (movable < 2) continue;
-      moving.subarray(0, movable).sort(biasRight ? rightBias : leftBias);
+      sortByBary(moving, movable, bary, pos, biasRight, spare);
       let k = 0;
       for (let i = s; i < e; i++) if (bary[order[i]] !== -1) order[i] = moving[k++];
       for (let i = s; i < e; i++) pos[order[i]] = i - s;
@@ -1645,12 +1887,52 @@ function reduceCrossings(g: Graph, nodes: LNode[]): void {
     for (let r = 0; r <= maxRank; r++) for (let i = layerStart[r]; i < layerStart[r + 1]; i++) pos[order[i]] = i - layerStart[r];
   };
 
+  // Adjacent swaps can remove crossings missed by barycenter sweeps.
+  const pinOf = (v: number): number => (v < real ? nodes[v].pin : 0);
+  const at = (e: number, up: boolean): number => {
+    const u = up ? EF[e] : ET[e];
+    return offsets && W[u] > 0 ? pos[u] + (up ? EFD[e] : ETD[e]) / W[u] : pos[u];
+  };
+  // Crossings between a and b, assuming a is left of b.
+  const between = (a: number, b: number): number => {
+    let c = 0;
+    for (let k = predStart[a]; k < predStart[a + 1]; k++) {
+      const x = at(predE[k], true);
+      for (let j = predStart[b]; j < predStart[b + 1]; j++) if (x > at(predE[j], true)) c++;
+    }
+    for (let k = succStart[a]; k < succStart[a + 1]; k++) {
+      const x = at(succE[k], false);
+      for (let j = succStart[b]; j < succStart[b + 1]; j++) if (x > at(succE[j], false)) c++;
+    }
+    return c;
+  };
+  const transpose = (): void => {
+    for (let pass = 0; pass < 8; pass++) {
+      let improved = false;
+      for (let r = 0; r <= maxRank; r++) {
+        if (fixed[r]) continue;
+        const s = layerStart[r];
+        for (let i = s; i + 1 < layerStart[r + 1]; i++) {
+          const a = order[i];
+          const b = order[i + 1];
+          if (pinOf(a) !== pinOf(b) || (GRP && GRP[a] !== GRP[b])) continue;
+          if (between(b, a) >= between(a, b)) continue;
+          order[i] = b;
+          order[i + 1] = a;
+          pos[b] = i - s;
+          pos[a] = i + 1 - s;
+          improved = true;
+        }
+      }
+      if (!improved) break;
+    }
+  };
+
   // The sweeps are run twice from the same start, going down first and going up first. They
   // often end with as few crossings either way but a different order, and then the one that
   // keeps more of the nodes in the order they were given is the less surprising.
   // Only for graphs small enough to be read node by node: a second run costs as much as the first.
   const initial = order.slice();
-  const start = best;
   const small = n <= 600;
   let chosen = bestOrder;
   let chosenOut = Infinity;
@@ -1672,6 +1954,15 @@ function reduceCrossings(g: Graph, nodes: LNode[]): void {
       }
     }
     order.set(foundOrder);
+    if (small && found > 0) {
+      settlePositions();
+      transpose();
+      const c = count();
+      if (c < found) {
+        found = c;
+        foundOrder.set(order);
+      }
+    }
     const out = small ? outOfOrder() : 0;
     if (attempt === 0 || found < best || (found === best && out < chosenOut)) {
       best = found;
@@ -1682,14 +1973,17 @@ function reduceCrossings(g: Graph, nodes: LNode[]): void {
   order.set(chosen);
   settlePositions();
   bestOrder.set(chosen);
+  // The retained grouped order may exceed the ungrouped threshold; recount it.
+  if (GRP) best = count();
 
   // A drawing and its mirror image cross as often too. Of those two, likewise.
-  if (!small) return;
-  for (let i = 0; i < real; i++) if (nodes[i].pin !== 0) return;
-  if (chosenOut === 0) return;
+  if (!small) return [best, declared];
+  for (let i = 0; i < real; i++) if (nodes[i].pin !== 0) return [best, declared];
+  if (chosenOut === 0 || fixed[0] || fixed[maxRank]) return [best, declared];
   for (let r = 0; r <= maxRank; r++) order.subarray(layerStart[r], layerStart[r + 1]).reverse();
   settlePositions();
   if (count() > best || outOfOrder() >= chosenOut) order.set(bestOrder);
+  return [best, declared];
 }
 
 // Half the room a node, bend or port takes across the flow, with its share of the gap beside it.
@@ -1757,6 +2051,7 @@ function position(g: Graph, opt: LayeredOptions): Float64Array {
   const outE = new Int32Array(n);
   const fill = new Int32Array(n);
   const topo = new Int32Array(n);
+  const x = new Float64Array(n);
 
   for (let variant = 0; variant < 4; variant++) {
     const up = variant < 2;
@@ -1770,6 +2065,9 @@ function position(g: Graph, opt: LayeredOptions): Float64Array {
       root[i] = i;
       align[i] = i;
       shift[i] = 0;
+      indeg[i] = 0;
+      outStart[i + 1] = 0;
+      x[i] = 0;
     }
 
     for (let step = 0; step <= maxRank; step++) {
@@ -1802,8 +2100,6 @@ function position(g: Graph, opt: LayeredOptions): Float64Array {
     }
 
     let blockEdges = 0;
-    indeg.fill(0);
-    outStart.fill(0);
     for (let r = 0; r <= maxRank; r++) {
       const s = layerStart[r];
       const end = layerStart[r + 1];
@@ -1820,10 +2116,9 @@ function position(g: Graph, opt: LayeredOptions): Float64Array {
       }
     }
     for (let i = 0; i < n; i++) outStart[i + 1] += outStart[i];
-    fill.set(outStart.subarray(0, n));
+    for (let i = 0; i < n; i++) fill[i] = outStart[i];
     for (let e = 0; e < blockEdges; e++) outE[fill[eFrom[e]]++] = e;
 
-    const x = new Float64Array(n);
     let count = 0;
     for (let i = 0; i < n; i++) if (root[i] === i && indeg[i] === 0) topo[count++] = i;
     for (let q = 0; q < count; q++) {

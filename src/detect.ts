@@ -39,7 +39,7 @@ const DETECTORS = [
   ['mindmap', 'mindmap', /^\s*mindmap/],
   ['architecture', 'architecture', /^\s*architecture/],
   ['agentflow', 'agentflow', /^\s*agentflow-beta\b/],
-  ['c4', 'c4', /^\s*C4Context|C4Container|C4Component|C4Dynamic|C4Deployment/],
+  ['c4', 'c4', /^\s*(?:C4Context|C4Container|C4Component|C4Dynamic|C4Deployment)/],
   ['kanban', 'kanban', /^\s*kanban/],
   ['class', 'classDiagram', /^\s*classDiagram/],
   ['er', 'er', /^\s*erDiagram/],

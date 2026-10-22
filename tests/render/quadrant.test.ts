@@ -152,6 +152,50 @@ describe('quadrant chart rendering', () => {
     expect(new Set(labels.map(([x, y]) => `${Math.round(x / 20)},${Math.round(y / 10)}`)).size).toBe(4);
   });
 
+  it('keeps a boundary point label below its quadrant title before using a crossing fallback', () => {
+    const source = `quadrantChart
+      title Q4 candidates by effort and impact
+      x-axis Low effort --> High effort
+      y-axis Low impact --> High impact
+      quadrant-1 Plan carefully
+      quadrant-2 Do first
+      quadrant-3 Reconsider
+      quadrant-4 Quick wins
+      Chart gallery editor: [0.72, 0.85]
+      First-run onboarding: [0.35, 0.78]
+      Shared folders: [0.88, 0.70]
+      Export to PDF: [0.30, 0.55]
+      Custom themes: [0.45, 0.20]
+      Calendar sync: [0.65, 0.30]
+      Keyboard shortcut sheet: [0.12, 0.48]`;
+    const { svg } = render(source, options);
+    const quadrant = /<g class="pele-quadrant" data-id="3">([\s\S]*?)<\/g>/.exec(svg)![1];
+    const rect = elements(quadrant).find((el) => el.name === 'rect')!.attrs;
+    const title = elements(quadrant).find((el) => el.name === 'text')!.attrs;
+    const label = elements(/<text[^>]*>Keyboard shortcut sheet<\/text>/.exec(svg)![0])[0].attrs;
+    const halfWidth = metricsMeasurer.width('Keyboard shortcut sheet', 12, 0) / 2;
+    expect(Number(label.get('y'))).toBeGreaterThan(Number(title.get('y')) + 12);
+    expect(Number(label.get('x')) - halfWidth).toBeGreaterThan(Number(rect.get('x')));
+    expect(Number(label.get('x')) + halfWidth).toBeLessThan(Number(rect.get('x')) + Number(rect.get('width')));
+    expect(circles(svg)).toHaveLength(7);
+  });
+
+  it('keeps a label beside its point when there is room before going below the quadrant title', () => {
+    const source = `quadrantChart
+      title Q4 candidates by effort and impact
+      x-axis Low effort --> High effort
+      y-axis Low impact --> High impact
+      quadrant-1 Plan carefully
+      quadrant-2 Do first
+      quadrant-3 Reconsider
+      quadrant-4 Quick wins
+      Left edge: [0, 0.5]`;
+    const { svg } = render(source, { ...options, maxWidth: 320 });
+    const title = elements(/<text[^>]*>Reconsider<\/text>/.exec(svg)![0])[0].attrs;
+    const label = elements(/<text[^>]*>Left edge<\/text>/.exec(svg)![0])[0].attrs;
+    expect(Number(label.get('y'))).toBeLessThan(Number(title.get('y')));
+  });
+
   it('reads markdown strings and line breaks in labels', () => {
     const { svg } = render('quadrantChart\n quadrant-1 "`**Bold** text`"\n "two<br>lines": [0.5, 0.5]', options);
     expect(svg).toContain('<tspan x=');

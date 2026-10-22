@@ -10,6 +10,15 @@ export const ROOT_STYLE =
 
 export const FONT_MONO = 'var(--_fm)';
 export const RADIUS = 'var(--pele-radius,4px)';
+
+// Use CSS for rx variables to support older browsers. Put the default first so
+// diagram styles can override it.
+export const ROUNDED = ' style="rx:var(--_r)"';
+
+export function rounded(attrs: string): string {
+  const at = attrs.indexOf(' style="');
+  return at < 0 ? attrs + ROUNDED : `${attrs.slice(0, at + 8)}rx:var(--_r);${attrs.slice(at + 8)}`;
+}
 // The color of what a diagram marks as critical. It is not one of the series colors, as a theme
 // may put those in any order.
 export const CRITICAL = 'var(--pele-critical,#e45756)';

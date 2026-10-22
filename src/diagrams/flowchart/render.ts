@@ -1,4 +1,5 @@
 import { cnode, compoundLayout, direction, shiftLayout, type CEdge, type CNode, type CompoundResult, type Dir } from '../../layout/compound.js';
+import { titleLabel } from '../../svg/title.js';
 import type { LayeredOptions } from '../../layout/layered.js';
 import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num } from '../../svg/builder.js';
@@ -6,7 +7,7 @@ import { clusterTitleX, markCrossings, struckTitle, titleCrossed, type Crossings
 import { edgeLabelSvg, loopPath, marker, markerTrim, routePath, sideReach, type EdgePath } from '../../svg/edges.js';
 import { svgDocument } from '../../svg/root.js';
 import { drawShape, endSide, insetRoute, shapeHasLabel, shapeSize, shapeSpan } from '../../svg/shapes.js';
-import { RADIUS, classNames, resolveStyle, type ResolvedStyle } from '../../svg/theme.js';
+import { classNames, resolveStyle, rounded, type ResolvedStyle } from '../../svg/theme.js';
 import { layoutLabel, type Label } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
 import { decodeEntities } from '../../text/entities.js';
@@ -67,7 +68,7 @@ function draw(db: FlowDb, config: Config, options: RenderOptions, variant: FlowV
   variant?.prepare(graph);
   const size = options.fontSize ?? 16;
   const edgeSize = Math.round(size * 0.875);
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const wrapWidth = Math.min(numberOption(flow, 'wrappingWidth', 200), variant && tight ? 100 : Infinity);
   const pad = options.padding ?? 8;
   const icons = options.icons;
@@ -184,7 +185,7 @@ function draw(db: FlowDb, config: Config, options: RenderOptions, variant: FlowV
     ? variant.layout(cnodes, cedges, rootDir, layoutOptions, tight)
     : compoundLayout(cnodes, cedges, rootDir, layoutOptions);
 
-  const title = layoutLabel(db.title, false, measurer, size, tight ? titleRoom(options) : 4000, Style.Bold);
+  const title = titleLabel(db.title, measurer, size, tight ? titleRoom(options) : 4000);
   const titleHeight = title.height > 0 ? title.height + 12 : 0;
   const inner = Math.max(layout.width, title.width);
   const ox = pad + (inner - layout.width) / 2;
@@ -224,9 +225,7 @@ function draw(db: FlowDb, config: Config, options: RenderOptions, variant: FlowV
       if (struck) struckTitles += struckTitle(view.label, titleX, titleY, titleAttrs, id, cnodes, i, icons);
       clusters +=
         `<g class="pele-cluster${classes}" data-id="${id}">` +
-        `<rect x="${num(x - c.w / 2)}" y="${num(y - c.h / 2)}" width="${num(c.w)}" height="${num(c.h)}" rx="${RADIUS}" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)"${
-          view.style.shape
-        }/>` +
+        `<rect x="${num(x - c.w / 2)}" y="${num(y - c.h / 2)}" width="${num(c.w)}" height="${num(c.h)}" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)"${rounded(view.style.shape)}/>` +
         (struck ? '' : labelSvg(view.label, titleX, titleY, titleAttrs, icons)) +
         '</g>';
       continue;

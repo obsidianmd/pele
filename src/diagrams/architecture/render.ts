@@ -3,7 +3,7 @@ import type { Config } from '../../preprocess.js';
 import { escText, labelSvg, num } from '../../svg/builder.js';
 import { edgeLabelSvg, marker, markerTrim } from '../../svg/edges.js';
 import { svgDocument } from '../../svg/root.js';
-import { RADIUS } from '../../svg/theme.js';
+import { ROUNDED } from '../../svg/theme.js';
 import { layoutLabel, type Label, type Span } from '../../text/label.js';
 import { Style, defaultMeasurer, type TextMeasurer } from '../../text/measurer.js';
 import type { IconResolver, RenderOptions, Rendered } from '../../types.js';
@@ -216,7 +216,7 @@ function draw(model: ArchitectureModel, config: Config, options: RenderOptions, 
   const size = setting(config, 'fontSize', options.fontSize ?? 16, 4, 128);
   const groupPad = Math.min(setting(config, 'padding', 20, 0, 256), tight ? 12 : Infinity);
   const small = Math.round(size * 0.875);
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const pad = options.padding ?? 8;
   const icons = options.icons;
   const half = iconSize / 2;
@@ -518,7 +518,7 @@ function draw(model: ArchitectureModel, config: Config, options: RenderOptions, 
     }
     clusters +=
       `<g class="pele-cluster" data-id="${escText(group.id)}">` +
-      `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(bottom(g) - y)}" rx="${RADIUS}" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)"/>` +
+      `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(bottom(g) - y)}" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)"${ROUNDED}/>` +
       head +
       '</g>';
   }
@@ -543,7 +543,7 @@ function draw(model: ArchitectureModel, config: Config, options: RenderOptions, 
     }
     nodesOut +=
       `<g class="pele-node pele-service" ${at}>` +
-      `<rect x="${num(-half)}" width="${num(iconSize)}" height="${num(iconSize)}" rx="${RADIUS}" fill="var(--_s)" stroke="var(--_b)"/>` +
+      `<rect x="${num(-half)}" width="${num(iconSize)}" height="${num(iconSize)}" fill="var(--_s)" stroke="var(--_b)"${ROUNDED}/>` +
       inner +
       labelSvg(labels[i], 0, iconSize + LABEL_GAP + labels[i].height / 2, ' class="pele-label"', icons) +
       '</g>';

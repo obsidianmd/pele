@@ -4,7 +4,7 @@ import { render } from '../../src/index.js';
 import { metricsMeasurer } from '../../src/text/measurer.js';
 import { assertInert } from '../support/inert.js';
 
-const options = { measurer: metricsMeasurer };
+const options = { measurer: metricsMeasurer, now: 0 };
 const corpora = readdirSync('tests/corpus')
   .filter((file) => file.endsWith('-docs.json'))
   .sort()

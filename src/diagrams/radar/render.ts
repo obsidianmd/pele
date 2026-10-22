@@ -58,7 +58,7 @@ export function renderRadar(model: RadarModel, config: Config, options: RenderOp
 function draw(model: RadarModel, config: Config, options: RenderOptions, width: number, height: number, tight: boolean): Rendered {
   const size = options.fontSize ?? 16;
   const small = Math.round(size * 0.875);
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const pad = options.padding ?? 8;
 
   const axisScale = option(config, 'axisScaleFactor', 1, 0, 10);

@@ -1,4 +1,5 @@
 import { cnode, compoundLayout, direction, type CEdge, type CNode } from '../../layout/compound.js';
+import { wrapComponents } from '../../layout/components.js';
 import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num } from '../../svg/builder.js';
 import { clusterTitleX, markCrossings, struckTitle, titleCrossed, type Crossings } from '../../svg/cluster.js';
@@ -6,9 +7,9 @@ import { edgeLabelSvg, routePath, type EdgePath } from '../../svg/edges.js';
 import { svgDocument } from '../../svg/root.js';
 import { endSide } from '../../svg/shapes.js';
 import { withTitle } from '../../svg/title.js';
-import { RADIUS, classNames, resolveStyle, type ResolvedStyle } from '../../svg/theme.js';
+import { ROUNDED, classNames, resolveStyle, rounded, type ResolvedStyle } from '../../svg/theme.js';
 import { decodeEntities } from '../../text/entities.js';
-import { layoutLabel, type Label } from '../../text/label.js';
+import { hasMath, layoutLabel, type Label } from '../../text/label.js';
 import { Style, defaultMeasurer, type TextMeasurer } from '../../text/measurer.js';
 import type { LinkInfo, RenderOptions, Rendered } from '../../types.js';
 import { runsAcross, tighten, turnToFit } from '../common/fit-width.js';
@@ -52,7 +53,7 @@ interface View {
   w: number;
   h: number;
   loops: number;
-  annotations: string[];
+  annotations: (string | Label)[];
   attributes: Line[];
   methods: Line[];
   titleH: number;
@@ -94,8 +95,15 @@ function draw(db: ClassDb, config: Config, options: RenderOptions, turned: boole
   const small = Math.round(size * 0.875);
   const tiny = Math.round(size * 0.8);
   const tinyHeight = Math.round(tiny * 1.4);
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const pad = options.padding ?? 8;
+  // Keep annotations and cardinalities literal unless math is typeset.
+  const mathText = (raw: string, fontSize: number): Label | undefined => {
+    if (!raw.includes('$$')) return undefined;
+    const label = layoutLabel(raw, false, measurer, fontSize, 4000);
+    return label.lines.some(hasMath) ? label : undefined;
+  };
+  const cardWidth = (raw: string): number => (raw ? (mathText(raw, tiny)?.width ?? measurer.width(decodeEntities(raw), tiny, 0)) : 0);
   const rootDir = turned ? 'TB' : direction(db.direction);
 
   // A class may carry the declarations of many classDefs many times over. Each distinct declaration
@@ -206,16 +214,20 @@ function draw(db: ClassDb, config: Config, options: RenderOptions, turned: boole
     // The generic type is escaped so that `<T>` is not read as a tag.
     const generic = cls.type ? '&lt;' + parseGenericTypes(cls.type).replace(/</g, '&lt;').replace(/>/g, '&gt;') + '&gt;' : '';
     const label = layoutLabel(cls.label + generic, false, measurer, fontSize, 4000, Style.Bold | (style.italic ? Style.Italic : 0));
-    const annotations = cls.annotations.length > 0 ? cls.annotations.map((a) => `«${decodeEntities(a).trim()}»`) : NO_TEXT;
+    const annotations = cls.annotations.length > 0 ? cls.annotations.map((a) => mathText(`«${a.trim()}»`, tiny) ?? `«${decodeEntities(a).trim()}»`) : NO_TEXT;
     const attributes = cls.members.length > 0 ? cls.members.map((m) => memberLine(m, measurer, memberSize)) : NO_LINES;
     const methods = cls.methods.length > 0 ? cls.methods.map((m) => memberLine(m, measurer, memberSize)) : NO_LINES;
     let inner = label.width;
-    for (const a of annotations) inner = Math.max(inner, measurer.width(a, tiny, 0));
+    let annotationsH = 0;
+    for (const a of annotations) {
+      inner = Math.max(inner, typeof a === 'string' ? measurer.width(a, tiny, 0) : a.width);
+      annotationsH += typeof a === 'string' ? tinyHeight : Math.max(tinyHeight, a.height);
+    }
     for (const line of attributes) inner = Math.max(inner, line.width);
     for (const line of methods) inner = Math.max(inner, line.width);
     const sections = !(hideEmpty && attributes.length === 0 && methods.length === 0);
     const section = (count: number): number => (!sections ? 0 : count > 0 ? 2 * SECTION_PAD + count * lineHeight : EMPTY_SECTION);
-    const titleH = 2 * TITLE_PAD + annotations.length * tinyHeight + Math.max(label.height, Math.round(fontSize * 1.5));
+    const titleH = 2 * TITLE_PAD + annotationsH + Math.max(label.height, Math.round(fontSize * 1.5));
     const attributesH = section(attributes.length);
     return {
       node,
@@ -248,8 +260,8 @@ function draw(db: ClassDb, config: Config, options: RenderOptions, turned: boole
   for (const edge of graph.edges) {
     if (edge.source < 0 || edge.target < 0) continue;
     const label = layoutLabel(edge.label, true, measurer, small, 200);
-    const startW = edge.startLabelRight ? measurer.width(decodeEntities(edge.startLabelRight), tiny, 0) : 0;
-    const endW = edge.endLabelLeft ? measurer.width(decodeEntities(edge.endLabelLeft), tiny, 0) : 0;
+    const startW = cardWidth(edge.startLabelRight);
+    const endW = cardWidth(edge.endLabelLeft);
     if (edge.source === edge.target) {
       views[edge.source].loops++;
       cnodes[edge.source].w += 2 * (LOOP + (label.width > 0 ? label.width + 12 : 0));
@@ -292,10 +304,16 @@ function draw(db: ClassDb, config: Config, options: RenderOptions, turned: boole
 
   let lettered = false;
   for (let i = 0; i < drawn.length && !lettered; i++) lettered = startRoom[i] > 0 || endRoom[i] > 0;
+  // Cardinalities at both ends of a vertical edge need room for their height between the ranks.
+  let tallCards = 0;
+  if (rootDir === 'TB' || rootDir === 'BT') {
+    const cardHeight = (raw: string): number => (raw ? Math.max(tinyHeight, mathText(raw, tiny)?.height ?? 0) : 0);
+    for (const edge of drawn) tallCards = Math.max(tallCards, cardHeight(edge.startLabelRight) + cardHeight(edge.endLabelLeft) - 2 * tinyHeight);
+  }
   const layout = compoundLayout(cnodes, cedges, rootDir, {
     nodeSep: numberOption(conf, 'nodeSpacing', NODE_SEP),
     edgeSep: EDGE_SEP,
-    rankSep: numberOption(conf, 'rankSpacing', lettered ? RANK_SEP + 16 : RANK_SEP),
+    rankSep: numberOption(conf, 'rankSpacing', lettered ? RANK_SEP + 16 : RANK_SEP) + tallCards,
     portSep: 20,
     apart: true,
   });
@@ -305,7 +323,7 @@ function draw(db: ClassDb, config: Config, options: RenderOptions, turned: boole
   // which sits beside it on the side the line then bends toward, away from the neighbors that bend
   // the other way. Neighbors are set apart far enough for the text between them.
   const sides = new Map<number, End[]>();
-  const cards: { text: string; x: number; y: number }[] = [];
+  const cards: { text: string; math: Label | undefined; x: number; y: number; w: number; h: number; parent: number }[] = [];
   const attach = (ce: CEdge, at: number, item: number, room: number, order: number): End | undefined => {
     const route = ce.route;
     const c = cnodes[item];
@@ -402,22 +420,24 @@ function draw(db: ClassDb, config: Config, options: RenderOptions, turned: boole
   let minY = 0;
   let maxX = layout.width;
   let maxY = layout.height;
-  const card = (raw: string, width: number, x: number, y: number, side: number, after: boolean): void => {
+  const card = (parent: number, raw: string, width: number, x: number, y: number, side: number, after: boolean): void => {
     if (!raw) return;
+    const math = mathText(raw, tiny);
+    const h = math ? Math.max(tinyHeight, math.height) : tinyHeight;
     let cx = x;
     let cy = y;
     if (side & 1) {
       cx += (side === 3 ? -1 : 1) * (5 + width / 2);
-      cy += (after ? 1 : -1) * (7 + tinyHeight / 2);
+      cy += (after ? 1 : -1) * (7 + h / 2);
     } else {
       cx += (after ? 1 : -1) * (9 + width / 2);
-      cy += (side === 0 ? -1 : 1) * (3 + tinyHeight / 2);
+      cy += (side === 0 ? -1 : 1) * (3 + h / 2);
     }
-    cards.push({ text: decodeEntities(raw), x: cx, y: cy });
+    cards.push({ text: decodeEntities(raw), math, x: cx, y: cy, w: width, h, parent });
     minX = Math.min(minX, cx - width / 2);
     maxX = Math.max(maxX, cx + width / 2);
-    minY = Math.min(minY, cy - tinyHeight / 2);
-    maxY = Math.max(maxY, cy + tinyHeight / 2);
+    minY = Math.min(minY, cy - h / 2);
+    maxY = Math.max(maxY, cy + h / 2);
   };
   const loopSeen = new Map<number, number>();
   const loopAt = new Int32Array(cedges.length);
@@ -433,14 +453,28 @@ function draw(db: ClassDb, config: Config, options: RenderOptions, turned: boole
       const view = views[ce.src];
       const x = c.x + view.w / 2;
       const spread = Math.min(view.h / 2 - 4, 8 + k * 6);
-      card(edge.startLabelRight, startRoom[i], x, c.y - spread, 1, false);
-      card(edge.endLabelLeft, endRoom[i], x, c.y + spread, 1, true);
+      card(ce.src, edge.startLabelRight, startRoom[i], x, c.y - spread, 1, false);
+      card(ce.dst, edge.endLabelLeft, endRoom[i], x, c.y + spread, 1, true);
+      ce.labelX = c.x + view.w / 2 + LOOP + k * 8 + 4 + ce.labelW / 2;
+      ce.labelY = c.y;
     } else if (route.length >= 6) {
       const last = route.length - 3;
       const from = starts[i];
       const to = ends[i];
-      card(edge.startLabelRight, startRoom[i], route[0], route[1], from ? from.side : 2, from ? from.after : true);
-      card(edge.endLabelLeft, endRoom[i], route[last], route[last + 1], to ? to.side : 0, to ? to.after : true);
+      card(ce.src, edge.startLabelRight, startRoom[i], route[0], route[1], from ? from.side : 2, from ? from.after : true);
+      card(ce.dst, edge.endLabelLeft, endRoom[i], route[last], route[last + 1], to ? to.side : 0, to ? to.after : true);
+    }
+  }
+
+  const available = options.maxWidth;
+  if (available !== undefined && available > 0 && maxX - minX + 2 * pad > available) {
+    const cardNodes = cards.map((item) => ({ ...cnode(item.w, item.h, item.parent), x: item.x, y: item.y }));
+    const wrapped = wrapComponents(cnodes.concat(cardNodes), cedges, Math.max(1, available - 2 * pad), numberOption(conf, 'nodeSpacing', NODE_SEP));
+    if (wrapped) {
+      cards.forEach((item, i) => { item.x = cardNodes[i].x; item.y = cardNodes[i].y; });
+      minX = minY = 0;
+      maxX = wrapped.width;
+      maxY = wrapped.height;
     }
   }
 
@@ -475,7 +509,7 @@ function draw(db: ClassDb, config: Config, options: RenderOptions, turned: boole
       if (struck) struckTitles += struckTitle(view.label, titleX + ox, titleY, titleAttrs, id, graph.nodes, i);
       clusters +=
         `<g class="pele-cluster pele-namespace" data-id="${id}">` +
-        `<rect x="${num(x - w / 2)}" y="${num(y - h / 2)}" width="${num(w)}" height="${num(h)}" rx="${RADIUS}" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)"/>` +
+        `<rect x="${num(x - w / 2)}" y="${num(y - h / 2)}" width="${num(w)}" height="${num(h)}" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)"${ROUNDED}/>` +
         (struck ? '' : labelSvg(view.label, titleX + ox, titleY, titleAttrs)) +
         '</g>';
       continue;
@@ -506,7 +540,7 @@ function draw(db: ClassDb, config: Config, options: RenderOptions, turned: boole
     const top = -h / 2;
     const memberSize = Math.round(view.fontSize * 0.875);
     const lineHeight = Math.round(memberSize * 1.5);
-    let body = `<rect x="${num(left)}" y="${num(top)}" width="${num(w)}" height="${num(h)}" rx="${RADIUS}" fill="var(--_s)" stroke="var(--_b)"${style.shape}/>`;
+    let body = `<rect x="${num(left)}" y="${num(top)}" width="${num(w)}" height="${num(h)}" fill="var(--_s)" stroke="var(--_b)"${rounded(style.shape)}/>`;
     const first = top + view.titleH;
     const second = first + view.attributesH;
     if (h > view.titleH) {
@@ -515,8 +549,14 @@ function draw(db: ClassDb, config: Config, options: RenderOptions, turned: boole
     }
     let y = top + TITLE_PAD;
     for (const annotation of view.annotations) {
-      body += `<text class="pele-annotation" x="0" y="${num(y + tinyHeight / 2 + tiny * 0.35)}" text-anchor="middle" font-size="${tiny}" fill="var(--_m)">${esc(annotation)}</text>`;
-      y += tinyHeight;
+      if (typeof annotation === 'string') {
+        body += `<text class="pele-annotation" x="0" y="${num(y + tinyHeight / 2 + tiny * 0.35)}" text-anchor="middle" font-size="${tiny}" fill="var(--_m)">${esc(annotation)}</text>`;
+        y += tinyHeight;
+      } else {
+        const h = Math.max(tinyHeight, annotation.height);
+        body += labelSvg(annotation, 0, y + h / 2, ` class="pele-annotation" font-size="${tiny}" fill="var(--_m)"`, options.icons);
+        y += h;
+      }
     }
     const titleSize = view.fontSize === size ? '' : ` font-size="${num(view.fontSize)}"`;
     body += labelSvg(view.label, 0, (y + first - TITLE_PAD) / 2, ` class="pele-label"${titleSize} font-weight="var(--_hw)"${style.text}`, options.icons);
@@ -575,8 +615,6 @@ function draw(db: ClassDb, config: Config, options: RenderOptions, turned: boole
         edx: -1,
         edy: 0,
       };
-      ce.labelX = c.x + view.w / 2 + reach + 4 + ce.labelW / 2;
-      ce.labelY = c.y;
     } else {
       const route = ce.route;
       for (let k = 0; k < route.length; k += 3) {
@@ -601,7 +639,9 @@ function draw(db: ClassDb, config: Config, options: RenderOptions, turned: boole
 
   let cardsOut = '';
   for (const item of cards) {
-    cardsOut += `<text class="pele-cardinality" x="${num(item.x + ox)}" y="${num(item.y + oy + tiny * 0.35)}" text-anchor="middle">${esc(item.text)}</text>`;
+    cardsOut += item.math
+      ? labelSvg(item.math, item.x + ox, item.y + oy, ' class="pele-cardinality"', options.icons)
+      : `<text class="pele-cardinality" x="${num(item.x + ox)}" y="${num(item.y + oy + tiny * 0.35)}" text-anchor="middle">${esc(item.text)}</text>`;
   }
 
   const titled = withTitle(

@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { PeleError, parse, render } from '../../src/index.js';
+import { PeleError, detectType, parse, render } from '../../src/index.js';
 import { all } from '../../src/diagrams/registry.js';
 import { metricsMeasurer } from '../../src/text/measurer.js';
 import { PAYLOADS, assertInert } from '../support/inert.js';
@@ -16,6 +16,24 @@ const corpora = readdirSync('tests/corpus')
 const where = (name: string, src: string): string => `${name}: ${JSON.stringify(src).slice(0, 120)}`;
 
 describe('every diagram type', () => {
+  it.each(['C4Context', 'C4Container', 'C4Component', 'C4Dynamic', 'C4Deployment'])(
+    'renders other diagram types with %s in their labels',
+    (keyword) => {
+      const sources = [
+        ['flowchart', `flowchart LR\n  a[Web app] --> b[${keyword} view]`],
+        ['sequence', `sequenceDiagram\n  Alice->>Bob: ${keyword} view`],
+      ];
+      for (const [type, source] of sources) {
+        const result = render(source, options);
+        expect(detectType(source)).toBe(type);
+        expect(result.type).toBe(type);
+        expect(result.svg).toContain(keyword);
+        expect(result.width).toBeGreaterThan(0);
+        expect(result.height).toBeGreaterThan(0);
+      }
+    }
+  );
+
   it('has documentation examples', () => {
     const drawn = new Set<string>();
     for (const { sources } of corpora) for (const src of sources) drawn.add(render(src, options).type);

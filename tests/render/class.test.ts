@@ -38,6 +38,58 @@ function translate(svg: string, id: string): [number, number] {
 }
 
 describe('class diagram rendering', () => {
+  it('wraps disconnected class groups at maxWidth while keeping each relationship intact', () => {
+    const body = 'classA <|-- classB\nclassC *-- classD\nclassE o-- classF\nclassG <-- classH\nclassI -- classJ\nclassK <.. classL\nclassM <|.. classN\nclassO .. classP';
+    for (const dir of ['TB', 'BT', 'LR', 'RL']) {
+      const source = `classDiagram\ndirection ${dir}\n${body}`;
+      const natural = render(source, { ...options, autoDirection: false });
+      for (const maxWidth of [320, 600]) {
+        const narrow = render(source, { ...options, maxWidth, autoDirection: false });
+        if (natural.width <= maxWidth) {
+          expect(narrow.svg).toBe(natural.svg);
+          continue;
+        }
+        expect(narrow.width).toBeLessThanOrEqual(maxWidth);
+        expect(narrow.height).toBeGreaterThan(natural.height);
+        expect(count(narrow.svg, 'class="pele-node pele-class')).toBe(16);
+        expect(count(narrow.svg, 'class="pele-edge pele-relation')).toBe(8);
+        for (const [a, b] of [['A', 'B'], ['C', 'D'], ['E', 'F'], ['G', 'H'], ['I', 'J'], ['K', 'L'], ['M', 'N'], ['O', 'P']]) {
+          const from = translate(narrow.svg, `class${a}`), to = translate(narrow.svg, `class${b}`);
+          const oldFrom = translate(natural.svg, `class${a}`), oldTo = translate(natural.svg, `class${b}`);
+          expect(to[0] - from[0]).toBeCloseTo(oldTo[0] - oldFrom[0], 2);
+          expect(to[1] - from[1]).toBeCloseTo(oldTo[1] - oldFrom[1], 2);
+        }
+        expect(() => assertWellFormed(narrow.svg)).not.toThrow();
+        expect(render(source, { ...options, maxWidth, autoDirection: false }).svg).toBe(narrow.svg);
+      }
+      expect(render(source, { ...options, maxWidth: natural.width, autoDirection: false }).svg).toBe(natural.svg);
+    }
+  });
+
+  it('keeps connected and already fitting class diagrams unchanged', () => {
+    for (const body of ['A --> B\nB --> C\nC --> A : uses', 'A --> B\nclass C', 'namespace N {\nclass A\nclass B\n}\nA --> B : calls']) {
+      const natural = draw(body);
+      for (const maxWidth of [0, -1, NaN, Infinity, 5000]) expect(draw(body, { maxWidth })).toBe(natural);
+      if (body.startsWith('A --> B\nB --> C') || body.startsWith('namespace')) expect(draw(body, { maxWidth: 1 })).toBe(natural);
+    }
+  });
+
+  it('keeps the layout when wrapping would not make it narrower', () => {
+    const body = 'note "From Duck till Zebra"\nAnimal <|-- Duck\nAnimal <|-- Fish\nAnimal <|-- Zebra\nAnimal <|-- Cat\nAnimal <|-- Dog';
+    expect(draw(body, { maxWidth: 320 })).toBe(draw(body));
+  });
+
+  it('moves namespaces, notes, relationship labels and self-links with their class groups', () => {
+    const body = Array.from({ length: 4 }, (_, i) => `namespace N${i} {\nclass A${i}\nclass B${i}\n}\nA${i} "one" --> "many" B${i} : uses\nnote for A${i} "check"\nB${i} --> B${i} : retry`).join('\n');
+    const natural = draw(body);
+    const narrow = draw(body, { maxWidth: 600 });
+    expect(narrow).not.toBe(natural);
+    expect(Number(/viewBox="0 0 ([\d.]+)/.exec(narrow)![1])).toBeLessThanOrEqual(600);
+    for (const token of ['pele-class', 'pele-namespace', 'pele-note', 'pele-cardinality', 'pele-marker']) expect(count(narrow, token)).toBe(count(natural, token));
+    expect(narrow).not.toMatch(/NaN|Infinity|undefined/);
+    expect(() => assertWellFormed(narrow)).not.toThrow();
+  });
+
   it('renders every corpus input that parses, as well-formed SVG', () => {
     let rendered = 0;
     for (const src of corpus) {

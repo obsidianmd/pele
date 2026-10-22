@@ -31,7 +31,7 @@ export function renderVenn(model: VennModel, _config: Config, options: RenderOpt
   const size = options.fontSize ?? 16;
   const small = Math.round(size * 0.875);
   const tiny = Math.round(size * 0.8125);
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const pad = options.padding ?? 8;
 
   const circles = layoutCircles(model.subsets);

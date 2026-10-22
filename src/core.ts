@@ -2,6 +2,7 @@ import { detectDiagram, type Detected, type DiagramType, type MermaidType } from
 import { PeleError } from './errors.js';
 import { decodeEntities } from './text/entities.js';
 import { withIcons } from './text/icons.js';
+import { withMath } from './text/math.js';
 import { encodeEntities, preprocess, type Config } from './preprocess.js';
 import type { DiagramModel } from './models.js';
 import { mountWith, type MountOptions, type Mounted } from './mount.js';
@@ -11,7 +12,7 @@ export { PeleError } from './errors.js';
 export type { PeleErrorCode } from './errors.js';
 export type { DiagramType, MermaidType } from './detect.js';
 export type { TextMeasurer } from './text/measurer.js';
-export type { IconResolver, LinkInfo, RenderOptions, RenderResult } from './types.js';
+export type { IconResolver, LinkInfo, MathMarkup, MathResolver, RenderOptions, RenderResult } from './types.js';
 export type { Diagram } from './types.js';
 export type { MountOptions, Mounted } from './mount.js';
 export { forgetTextWidths } from './text/measurer.js';
@@ -143,7 +144,9 @@ export function render(source: string | DiagramModel, options: RenderOptions = {
     const resolve = options.icons;
     const icons = resolve && ((name: string) => resolve(decodeEntities(name)));
     const rendered = tagErrors({ type, mermaidType }, () =>
-      withIcons(icons, () => diagram.render(model, config, { ...options, responsive, icons }))
+      withMath(diagram.math ? options.math : undefined, () =>
+        withIcons(icons, () => diagram.render(model, config, { ...options, responsive, icons }))
+      )
     );
     const outputLimit = options.outputLimit ?? DEFAULT_OUTPUT_LIMIT;
     if (rendered.svg.length > outputLimit) {

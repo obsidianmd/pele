@@ -69,6 +69,16 @@ describe('inert sankey output', () => {
     expect(svg).toContain('data-id="&lt;script&gt;alert(1)&lt;/script&gt;"');
   });
 
+  it('escapes markup in Unicode node names', () => {
+    const from = '<script>Доход 🏠</script>';
+    const to = '収入" onload="alert(1)';
+    const src = `sankey\n${quoted(from)},${quoted(to)},1\n`;
+    expect(check(src)).toBe(true);
+    const { svg } = render(src, options);
+    expect(svg).toContain('data-id="&lt;script&gt;Доход 🏠&lt;/script&gt;"');
+    expect(svg).toContain('data-id="収入&quot; onload=&quot;alert(1)"');
+  });
+
   it('holds for hostile option values and configuration given by the host', () => {
     for (const payload of PAYLOADS) {
       const sankey = {

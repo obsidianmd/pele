@@ -62,7 +62,7 @@ export function renderXyChart(model: XyChartModel, config: Config, options: Rend
   const size = options.fontSize ?? 16;
   const small = Math.round(size * 0.875);
   const tiny = Math.round(size * 0.75);
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const pad = options.padding ?? 8;
   const natural = dimension(chart.width, 700);
   const width = capWidth(options, natural, 240);

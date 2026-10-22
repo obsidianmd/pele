@@ -2,7 +2,7 @@ import type { Config } from '../../preprocess.js';
 import { escText, labelSvg, num } from '../../svg/builder.js';
 import { marker, markerTrim } from '../../svg/edges.js';
 import { svgDocument } from '../../svg/root.js';
-import { RADIUS, seriesColor } from '../../svg/theme.js';
+import { ROUNDED, seriesColor } from '../../svg/theme.js';
 import { layoutLabel, type Label } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
 import type { RenderOptions, Rendered } from '../../types.js';
@@ -64,7 +64,7 @@ export function renderCynefin(model: CynefinModel, config: Config, options: Rend
   const size = options.fontSize ?? 16;
   const small = Math.round(size * 0.8125);
   const itemSize = Math.round(size * 0.875);
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const pad = options.padding ?? 8;
   const icons = options.icons;
   const showDescriptions = (config.cynefin as Config | undefined)?.showDomainDescriptions !== false;
@@ -180,7 +180,7 @@ export function renderCynefin(model: CynefinModel, config: Config, options: Rend
         `<g class="pele-node${item.overflow ? ' pele-cynefin-overflow' : ''}"${item.overflow ? '' : ` data-id="${escText(item.text)}"`}>` +
         `<rect x="${num(b.cx - item.w / 2)}" y="${num(y)}" width="${num(item.w)}" height="${num(
           item.h
-        )}" rx="${RADIUS}" fill="var(--_bg)" stroke="var(--_b)"${item.overflow ? ' stroke-dasharray="3 2"' : ''}/>` +
+        )}" fill="var(--_bg)" stroke="var(--_b)"${item.overflow ? ' stroke-dasharray="3 2"' : ''}${ROUNDED}/>` +
         labelSvg(item.label, b.cx, y + item.h / 2, ` class="pele-label" font-size="${itemSize}"${item.overflow ? ' fill="var(--_m)"' : ''}`, icons) +
         '</g>';
       y += item.h;

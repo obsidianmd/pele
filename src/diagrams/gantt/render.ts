@@ -1,7 +1,7 @@
 import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num } from '../../svg/builder.js';
 import { svgDocument } from '../../svg/root.js';
-import { CRITICAL, RADIUS, resolveStyle } from '../../svg/theme.js';
+import { CRITICAL, ROUNDED, resolveStyle } from '../../svg/theme.js';
 import { layoutLabel, type Label } from '../../text/label.js';
 import { Style, defaultMeasurer, type TextMeasurer } from '../../text/measurer.js';
 import type { LinkInfo, RenderOptions, Rendered } from '../../types.js';
@@ -71,7 +71,7 @@ interface Bar {
 
 export function renderGantt(model: GanttDb, config: Config, options: RenderOptions): Rendered {
   const size = options.fontSize ?? 16;
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const pad = options.padding ?? 8;
   const now = clock(options.now);
 
@@ -324,7 +324,7 @@ export function renderGantt(model: GanttDb, config: Config, options: RenderOptio
         const r = barHeight / 2;
         shape = `<path d="M${num(cx)},${num(cy - r)}L${num(cx + r)},${num(cy)}L${num(cx)},${num(cy + r)}L${num(cx - r)},${num(cy)}Z" ${paint} ${stroke} stroke-linejoin="round"/>`;
       } else {
-        shape = `<rect x="${num(bar.x0)}" y="${num(cy - barHeight / 2)}" width="${num(bar.x1 - bar.x0)}" height="${num(barHeight)}" rx="${RADIUS}" ${paint} ${stroke}/>`;
+        shape = `<rect x="${num(bar.x0)}" y="${num(cy - barHeight / 2)}" width="${num(bar.x1 - bar.x0)}" height="${num(barHeight)}" ${paint} ${stroke}${ROUNDED}/>`;
       }
       if (bar.inside) textFill = state === '' ? ' fill="var(--_bg)"' : '';
       else if (state === 'done') textFill = ' fill="var(--_m)"';

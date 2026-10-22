@@ -1,7 +1,7 @@
 import type { Config } from '../../preprocess.js';
 import { escText, labelSvg, num } from '../../svg/builder.js';
 import { svgDocument } from '../../svg/root.js';
-import { RADIUS, classNames, resolveStyle, seriesColor } from '../../svg/theme.js';
+import { ROUNDED, classNames, resolveStyle, seriesColor } from '../../svg/theme.js';
 import { layoutLabel, type Label } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
 import type { RenderOptions, Rendered } from '../../types.js';
@@ -35,7 +35,7 @@ export function renderQuadrant(model: QuadrantModel, config: Config, options: Re
   const size = options.fontSize ?? 16;
   const axisSize = Math.round(size * 0.875);
   const pointSize = Math.round(size * 0.75);
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const natural = Math.round(Math.max(100, length(config, 'chartWidth', 500, 4000)));
   const width = Math.round(capWidth(options, natural, 280));
   const height = Math.round((Math.max(100, length(config, 'chartHeight', 500, 4000)) * width) / natural);
@@ -96,7 +96,7 @@ export function renderQuadrant(model: QuadrantModel, config: Config, options: Re
     taken.push(cx - text.width / 2, cy - text.height / 2, cx + text.width / 2, cy + text.height / 2);
     quadrants +=
       `<g class="pele-quadrant" data-id="${k + 1}">` +
-      `<rect x="${num(x)}" y="${num(y)}" width="${num(tileW)}" height="${num(tileH)}" rx="${RADIUS}"/>` +
+      `<rect x="${num(x)}" y="${num(y)}" width="${num(tileW)}" height="${num(tileH)}"${ROUNDED}/>` +
       labelSvg(text, cx, cy, ' class="pele-label" fill="var(--_fg)" stroke="none"') +
       '</g>';
   }
@@ -149,8 +149,9 @@ export function renderQuadrant(model: QuadrantModel, config: Config, options: Re
     );
   }
 
-  // A label goes below its point, or above, right or left of it when that is the first place
-  // that is inside the chart and free. A second round lets it cross the gaps between quadrants.
+  // A label goes below its point, or above, right or left of it, or below its quadrant's title,
+  // when that is the first place that is inside the chart and free. A second round lets it
+  // cross the gaps between quadrants.
   // Large charts skip the search for a free place.
   const careful = dots.length <= CAREFUL;
   if (careful) for (const { cx, cy, reach } of dots) taken.push(cx - reach, cy - reach, cx + reach, cy + reach);
@@ -159,16 +160,22 @@ export function renderQuadrant(model: QuadrantModel, config: Config, options: Re
     const halfW = text.width / 2;
     const halfH = text.size * 0.6 + (text.height - text.lineHeight) / 2;
     const away = reach + textPad;
-    const spots = [cx, cy + away + halfH, cx, cy - away - halfH, cx + away + halfW, cy, cx - away - halfW, cy];
+    const inset = Math.min(away, Math.max(0, (tileW - text.width) / 2));
+    const heading = 8 + 4 * (cx < left + w / 2 ? (cy < top + h / 2 ? 1 : 2) : (cy < top + h / 2 ? 0 : 3));
+    const below = Math.max(cy + away, taken[heading + 3] + textPad) + halfH;
+    const spots = [cx, cy + away + halfH, cx, cy - away - halfH, cx + away + halfW, cy, cx - away - halfW, cy, cx, below];
     let tx = cx;
     let ty = spots[1];
     let found = false;
-    for (let k = 0; k < 16; k += 2) {
-      const spot = k % 8;
-      const x = spot < 4 && text.width < w ? Math.min(Math.max(spots[spot], left + halfW), left + w - halfW) : spots[spot];
+    for (let k = 0; k < 20; k += 2) {
+      const spot = k % 10;
+      // A label moved below a title keeps clear of the plot's edge.
+      const margin = spot === 8 ? inset : 0;
+      const x =
+        (spot < 4 || spot === 8) && text.width < w ? Math.min(Math.max(spots[spot], left + halfW + margin), left + w - halfW - margin) : spots[spot];
       const y = spots[spot + 1];
       if (x - halfW < left || x + halfW > left + w || y - halfH < top || y + halfH > top + h) continue;
-      const free = !careful || isClear(k < 8 ? 0 : 8, x - halfW, y - halfH, x + halfW, y + halfH);
+      const free = !careful || isClear(k < 10 ? 0 : 8, x - halfW, y - halfH, x + halfW, y + halfH);
       if (!found || free) {
         tx = x;
         ty = y;

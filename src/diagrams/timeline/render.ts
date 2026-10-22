@@ -2,7 +2,7 @@ import type { Config } from '../../preprocess.js';
 import { escText, labelSvg, num } from '../../svg/builder.js';
 import { ARROW, marker } from '../../svg/edges.js';
 import { svgDocument } from '../../svg/root.js';
-import { RADIUS, seriesColor } from '../../svg/theme.js';
+import { rounded, seriesColor } from '../../svg/theme.js';
 import type { Label } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
 import type { RenderOptions, Rendered } from '../../types.js';
@@ -30,7 +30,7 @@ interface Group {
 }
 
 function box(x: number, y: number, w: number, h: number, attrs: string): string {
-  return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="${RADIUS}"${attrs}/>`;
+  return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}"${rounded(attrs)}/>`;
 }
 
 export function renderTimeline(model: TimelineModel, config: Config, options: RenderOptions): Rendered {
@@ -41,7 +41,7 @@ export function renderTimeline(model: TimelineModel, config: Config, options: Re
 function draw(model: TimelineModel, config: Config, options: RenderOptions, vertical: boolean): Rendered {
   const size = options.fontSize ?? 16;
   const small = Math.round(size * 0.875);
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const pad = options.padding ?? 8;
   const multicolor = (config.timeline as Config | undefined)?.disableMulticolor !== true;
   const periods = model.periods;
@@ -137,10 +137,12 @@ function draw(model: TimelineModel, config: Config, options: RenderOptions, vert
       for (const i of group.periods) {
         const color = colorOf(group, i);
         const h = chipHeight(periodLabels[i]);
-        const cy = y + h / 2;
+        // A period and its first event share one center line, so the line between them runs straight.
+        const first = eventLabels[i].length > 0 ? eventHeight(eventLabels[i][0]) : h;
+        const cy = y + Math.max(h, first) / 2;
         let d = `M${num(left + colW)},${num(cy)}H${num(axisX)}`;
         let cards = '';
-        let ey = y;
+        let ey = cy - first / 2;
         let last = cy;
         for (const label of eventLabels[i]) {
           const eh = eventHeight(label);
@@ -152,12 +154,12 @@ function draw(model: TimelineModel, config: Config, options: RenderOptions, vert
         if (cards) d += `M${num(axisX)},${num(cy)}H${num(spineX)}V${num(last)}`;
         body +=
           openPeriod(i) +
-          period(i, color, left, y, h) +
+          period(i, color, left, cy - h / 2, h) +
           `<path class="pele-edge" d="${d}"${LINE}/>` +
           dot(axisX, cy, color) +
           cards +
           '</g>';
-        y = Math.max(y + h, ey - EVENT_GAP) + GAP;
+        y = Math.max(cy + h / 2, ey - EVENT_GAP) + GAP;
       }
       if (group.periods.length === 0) y += GAP - SECTION_GAP - 4;
       if (group.section >= 0) body += '</g>';

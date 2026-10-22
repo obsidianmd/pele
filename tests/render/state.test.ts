@@ -221,6 +221,69 @@ describe('state diagram rendering', () => {
     expect(svg).not.toContain('NaN');
   });
 
+  it('uses the configured curve for transitions, including those across composite borders', () => {
+    for (const dir of ['TB', 'LR']) {
+      const body = `direction ${dir}\n state A {\n a --> b\n a --> c\n }\n out --> a\n A --> out`;
+      const smooth = draw(body);
+      expect(smooth).toMatch(/<g class="pele-edge pele-transition"[^>]*><path d="[^"]*C/);
+      for (const curve of ['linear', 'step', 'stepBefore', 'stepAfter']) {
+        const svg = render(`---\nconfig:\n  flowchart:\n    curve: ${curve}\n---\nstateDiagram-v2\n${body}`, options).svg;
+        expect(svg).not.toBe(smooth);
+        expect(() => assertWellFormed(svg)).not.toThrow();
+        expect(svg).not.toMatch(/NaN|Infinity|undefined/);
+        const paths = [...svg.matchAll(/<g class="pele-edge pele-transition"[^>]*><path d="([^"]+)"/g)].map((m) => m[1]);
+        expect(paths).toHaveLength(4);
+        if (curve !== 'linear') expect(paths.some((d) => d.includes('Q'))).toBe(true);
+        for (const d of paths) expect(d).toMatch(curve === 'linear'
+          ? /^M[-\d.]+,[-\d.]+(?:L[-\d.]+,[-\d.]+)+$/
+          : /^M[-\d.]+,[-\d.]+(?:L[-\d.]+,[-\d.]+|Q[-\d.]+,[-\d.]+ [-\d.]+,[-\d.]+)+$/);
+        const tips = [...svg.matchAll(/class="pele-marker" d="M([-\d.]+),([-\d.]+)L/g)].map((m) => [Number(m[1]), Number(m[2])]);
+        expect(tips).toHaveLength(4);
+        // Each path stops just behind its arrowhead, including at composite borders.
+        for (let i = 0; i < paths.length; i++) {
+          const end = /([-\d.]+),([-\d.]+)$/.exec(paths[i])!;
+          expect(Math.hypot(tips[i][0] - Number(end[1]), tips[i][1] - Number(end[2]))).toBeCloseTo(7, 1);
+        }
+      }
+    }
+  });
+
+  it('keeps stepped arrowheads pointing into their states along the flow', () => {
+    for (const dir of ['TB', 'LR']) {
+      for (const curve of ['step', 'stepBefore', 'stepAfter']) {
+        const src = `---\nconfig:\n  flowchart:\n    curve: ${curve}\n---\nstateDiagram-v2\n direction ${dir}\n A --> B\n A --> C\n A --> D\n B --> E\n C --> E\n D --> E\n E --> F : Yes\n E --> A : No`;
+        const svg = render(src, options).svg;
+        const markers = [...svg.matchAll(/class="pele-marker" d="M[-\d.]+,[-\d.]+L([-\d.]+),([-\d.]+)L([-\d.]+),([-\d.]+)Z"/g)];
+        expect(markers).toHaveLength(8);
+        // The two back corners are level, or on the same vertical for left-to-right flow.
+        for (const m of markers) expect(Number(m[dir === 'TB' ? 2 : 1])).toBeCloseTo(Number(m[dir === 'TB' ? 4 : 3]), 5);
+      }
+    }
+  });
+
+  it('ignores a state curve setting, which Mermaid does not have', () => {
+    const body = 'a --> b\n a --> c\n b --> d\n c --> d';
+    const svg = render(`---\nconfig:\n  state:\n    curve: step\n---\nstateDiagram-v2\n${body}`, options).svg;
+    expect(svg).toBe(draw(body));
+  });
+
+  it('keeps the default curve for absent, unknown and non-string settings', () => {
+    const body = 'a --> b\n a --> c\n b --> d\n c --> d';
+    for (const curve of ['basis', 'unknown', 'stepUnknown', '42', 'true', 'null', '{}']) {
+      const svg = render(`---\nconfig:\n  flowchart:\n    curve: ${curve}\n---\nstateDiagram-v2\n${body}`, options).svg;
+      expect(svg).toBe(draw(body));
+    }
+  });
+
+  it('keeps self-transitions curved for every curve setting', () => {
+    const body = 'a --> a : again';
+    for (const curve of ['linear', 'basis', 'step', 'stepBefore', 'stepAfter']) {
+      const svg = render(`---\nconfig:\n  flowchart:\n    curve: ${curve}\n---\nstateDiagram-v2\n${body}`, options).svg;
+      expect(svg).toBe(draw(body));
+      expect(count(svg, 'class="pele-marker"')).toBe(1);
+    }
+  });
+
   it('keeps the labels of several self-transitions apart', () => {
     const labelY = (svg: string, text: string): number => Number(new RegExp(`y="([\\d.]+)" text-anchor="middle">${text}<`).exec(svg)![1]);
     const down = draw('a --> a : one\n a --> a : two\n a --> b');

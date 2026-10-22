@@ -124,9 +124,11 @@ export function renderState(db: StateDb, config: Config, options: RenderOptions)
 // `turned` draws a diagram that runs across as one that runs down.
 function draw(db: StateDb, config: Config, options: RenderOptions, turned: boolean): Rendered {
   const graph = db.graph;
+  // State diagrams follow the flowchart curve.
+  const curve = (config.flowchart as Config | undefined)?.curve;
   const size = options.fontSize ?? 16;
   const small = Math.round(size * 0.875);
-  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily);
+  const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const wrapWidth = numberOption(config, 'wrappingWidth', 200);
   const pad = options.padding ?? 8;
   const icons = options.icons;
@@ -396,6 +398,8 @@ function draw(db: StateDb, config: Config, options: RenderOptions, turned: boole
     edgeSep: EDGE_SEP,
     rankSep: numberOption(config, 'rankSpacing', RANK_SEP),
     portSep: 20,
+    tracks: curve === 'step' || curve === 'stepBefore' || curve === 'stepAfter',
+    straight: curve === 'linear',
     headRoom: markerTrim('arrow_point'),
   });
 
@@ -639,7 +643,7 @@ function draw(db: StateDb, config: Config, options: RenderOptions, turned: boole
           : [g.x + pad + (near ? -g.w / 2 : g.w / 2), route[at + 1], 1];
         route = inward ? point.concat(route) : route.concat(point);
       }
-      path = routePath(route, undefined, 0, markerTrim(endType), leaves, arrives);
+      path = routePath(route, typeof curve === 'string' ? curve : undefined, 0, markerTrim(endType), leaves, arrives);
     }
     edgesOut +=
       `<g class="pele-edge ${note ? 'pele-note-edge" stroke="var(--_b)" stroke-dasharray="3 4' : 'pele-transition'}" data-id="${escText(edge.id)}">` +
