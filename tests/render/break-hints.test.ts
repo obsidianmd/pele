@@ -22,6 +22,38 @@ describe('break hints', () => {
     expect(lines(`Re${SHY}con${SHY}fig`, 200)).toEqual([`Re${SHY}con${SHY}fig`]);
   });
 
+  it('keeps a soft-hyphenated word on the line when the rest of it fits there', () => {
+    expect(lines(`a uni${SHY}t test`, 39.2)).toEqual([`a uni${SHY}t`, 'test']);
+  });
+
+  it('keeps every line within the width when a word has several soft hyphens', () => {
+    const label = layoutLabel(`a uni${SHY}t${SHY}ed`, false, metricsMeasurer, 16, 39.2);
+    for (const width of label.widths) expect(width).toBeLessThanOrEqual(39.2);
+  });
+
+  it('keeps a line within the width when a soft-hyphenated word goes on in bold', () => {
+    const label = layoutLabel(`a uni${SHY}<b>t</b> test`, false, metricsMeasurer, 16, 39.2);
+    for (const width of label.widths) expect(width).toBeLessThanOrEqual(39.2);
+  });
+
+  it('wraps many pieces without width in linear time', () => {
+    for (const hint of [SHY, ZWSP]) {
+      const start = performance.now();
+      layoutLabel('a'.repeat(22) + `\u0300${hint}`.repeat(24000) + 'i xx', false, metricsMeasurer, 16, 200);
+      expect(performance.now() - start).toBeLessThan(1000);
+    }
+  });
+
+  it('breaks at a space after a soft hyphen without showing the hyphen', () => {
+    const label = layoutLabel(`a uni${SHY} t test`, false, metricsMeasurer, 16, 39.2);
+    for (const width of label.widths) expect(width).toBeLessThanOrEqual(39.2);
+    expect(lines(`a uni${SHY} t test`, 39.2).join(' ')).not.toContain('-');
+  });
+
+  it('shows no hyphen where a line breaks at a space in the next styled span', () => {
+    expect(lines(`ab${SHY}<i> cd</i>`, 25)).toEqual([`ab${SHY}`, 'cd']);
+  });
+
   it('reads &shy; as a soft hyphen', () => {
     expect(lines('RRCConnection&shy;Reconfiguration&shy;Complete', 140)).toEqual(['RRCConnection-', 'Reconfiguration-', 'Complete']);
   });
