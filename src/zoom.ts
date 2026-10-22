@@ -274,6 +274,9 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
   };
 
   const onPointerDown = (event: PointerEvent): void => {
+    // A pinch, or a touch drag too long for a tap, ends without a click, so the last drag ends
+    // when the next press begins.
+    dragged = false;
     if (!zoomable() || ours(event) || (event.pointerType === 'mouse' && event.button !== 0)) return;
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     travelled = 0;
@@ -309,9 +312,10 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
     if (pointers.size === 0 && svg && scale !== 0) svg.style.cursor = 'grab';
   };
 
-  // A drag that ends over a link is not a click on it.
+  // A drag that ends over a link is not a click on it. A click from the keyboard, of `detail` 0,
+  // ends no drag.
   const onClick = (event: MouseEvent): void => {
-    if (!dragged) return;
+    if (!dragged || event.detail === 0) return;
     dragged = false;
     event.preventDefault();
     event.stopPropagation();
