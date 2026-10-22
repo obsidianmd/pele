@@ -47,7 +47,7 @@ const CJK = '\\u2e80-\\u9fff\\uf900-\\ufaff\\uff00-\\uff60';
 const CLOSE = '、。，．：；！？）］｝」』】〕〉》〙〗ー…‥・ゝゞぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ,.:;!?)\\]}';
 const OPEN = '（［｛「『【〔〈《〘〖([{';
 const RE_CJK = new RegExp(`[${CJK}]`);
-// Zero-width spaces and soft hyphens are break opportunities, as in browsers. A soft hyphen shows as '-' where it breaks.
+// Break hints: a zero-width space, and a soft hyphen, which shows as '-' where a line breaks.
 const HINT = '\\u200b\\u00ad';
 const RE_HINT = new RegExp(`[${HINT}]`);
 const RE_PIECE = new RegExp(
@@ -240,20 +240,19 @@ function wrap(line: Span[], measurer: TextMeasurer, size: number, max: number, o
       continue;
     }
     const pieces = span.text.match(RE_PIECE) ?? [];
-    // A piece fits when the line can end after it. After a soft hyphen that takes the '-' it
-    // shows, unless the rest of the word fits on the line too, which hides the hyphen. The line
-    // only grows along a word, so a hyphen that does not fit after one piece fits after none.
-    // Widths of the pieces left in each word make that check one step.
+    // A piece ending in a soft hyphen fits if its '-' does, or if the rest of the word does, which
+    // hides the hyphen. The line only grows along a word, so no later hyphen in it fits either,
+    // and the remaining width of each word makes this one check.
     const soft = span.text.includes('\u00ad');
     const n = soft ? pieces.length : 0;
     const own = new Float64Array(n);
     const rest = new Float64Array(n + 1);
     for (let q = n - 1; q >= 0; q--) {
-      // A soft hyphen before a space is no break of its own: the line breaks at the space.
+      // A soft hyphen before a space is no break of its own: the space is.
       const shy = pieces[q].endsWith('\u00ad');
       const end = pieces[q].trimEnd();
       own[q] = measurer.width(shy ? end.slice(0, -1) : end, size, span.style);
-      // The rest of a word that goes on into a span with another style is not known here.
+      // Word width beyond this span is unknown.
       rest[q] = !shy ? own[q] : q === n - 1 ? (span === line[line.length - 1] ? own[q] : Infinity) : own[q] + rest[q + 1];
     }
     for (let p = 0; p < pieces.length; p++) {
@@ -264,15 +263,14 @@ function wrap(line: Span[], measurer: TextMeasurer, size: number, max: number, o
           ? width + partWidth <= max
           : width + measurer.width(part.slice(0, -1) + '-', size, span.style) <= max || width + rest[p] <= max;
       if (width > 0 && !fits) {
-        // A line that breaks at a space shows no hyphen, though a soft one ends it.
+        // Breaking at whitespace leaves a preceding soft hyphen hidden.
         commit(part.trimStart() === part);
         part = part.trimStart();
       }
       const last = current[current.length - 1];
       if (plain(last) && last.style === span.style) {
         last.text += part;
-        // A piece without width, as break hints can make, leaves the line as it was. Measuring
-        // the whole line again for each would take time that grows with the square of its length.
+        // Remeasuring for each zero-width piece would take quadratic time.
         if (partWidth > 0 || part.trimEnd() !== part) {
           const before = last.width;
           last.width = measurer.width(last.text, size, last.style);
