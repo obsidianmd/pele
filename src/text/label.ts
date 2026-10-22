@@ -218,7 +218,7 @@ function wrap(line: Span[], measurer: TextMeasurer, size: number, max: number, o
     const last = current[current.length - 1];
     if (plain(last)) {
       let trimmed = last.text.trimEnd();
-      if (hyphen && trimmed.endsWith('­')) trimmed = trimmed.slice(0, -1) + '-';
+      if (hyphen && trimmed.endsWith('\u00ad')) trimmed = trimmed.slice(0, -1) + '-';
       if (trimmed !== last.text) {
         last.text = trimmed;
         const w = measurer.width(trimmed, size, last.style);
@@ -242,7 +242,8 @@ function wrap(line: Span[], measurer: TextMeasurer, size: number, max: number, o
     for (const piece of span.text.match(RE_PIECE) ?? []) {
       let part = piece;
       // A trailing soft hyphen is measured as the '-' it becomes if the line breaks there.
-      if (width > 0 && width + measurer.width(part.trimEnd().replace(/­$/, '-'), size, span.style) > max) {
+      const end = part.trimEnd();
+      if (width > 0 && width + measurer.width(end.endsWith('\u00ad') ? end.slice(0, -1) + '-' : end, size, span.style) > max) {
         commit(true);
         part = part.trimStart();
       }

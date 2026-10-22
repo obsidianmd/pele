@@ -6,8 +6,8 @@ import { metricsMeasurer } from '../../src/text/measurer.js';
 const lines = (raw: string, max: number): string[] =>
   layoutLabel(raw, false, metricsMeasurer, 16, max).lines.map(line => line.map(span => span.text).join(''));
 
-const ZWSP = '​';
-const SHY = '­';
+const ZWSP = '\u200b';
+const SHY = '\u00ad';
 
 describe('break hints', () => {
   it('breaks at zero-width spaces instead of keeping the token whole', () => {
@@ -20,6 +20,10 @@ describe('break hints', () => {
     expect(lines(source, 140)).toEqual(['RRCConnection-', 'Reconfiguration-', 'Complete']);
     for (const width of layoutLabel(source, false, metricsMeasurer, 16, 140).widths) expect(width).toBeLessThanOrEqual(140);
     expect(lines(`Re${SHY}con${SHY}fig`, 200)).toEqual([`Re${SHY}con${SHY}fig`]);
+  });
+
+  it('reads &shy; as a soft hyphen', () => {
+    expect(lines('RRCConnection&shy;Reconfiguration&shy;Complete', 140)).toEqual(['RRCConnection-', 'Reconfiguration-', 'Complete']);
   });
 
   it('gives soft hyphens no width when they do not break', () => {
