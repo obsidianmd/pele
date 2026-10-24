@@ -171,7 +171,8 @@ export class VennLexer {
       }
 
       if (((c | 32) >= 97 && (c | 32) <= 122) || c === 95) {
-        if (this.word(i, 'title') && isSpace(src.charCodeAt(i + 5))) {
+        const sep = src.charCodeAt(i + 5);
+        if (this.word(i, 'title') && isSpace(sep) && sep !== 10 && sep !== 13) {
           let end = i + 6;
           while (end < n) {
             const ch = src.charCodeAt(end);
