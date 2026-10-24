@@ -125,12 +125,7 @@ export class VennLexer {
         return T.EOF;
       }
       const c = src.charCodeAt(i);
-      // A comment runs to the end of the line. It also takes the character before it along,
-      // whatever that is: a line break, or the last letter of a word.
-      if (
-        (c === 37 && src.charCodeAt(i + 1) === 37 && src.charCodeAt(i + 2) !== 123) ||
-        (c !== 125 && src.charCodeAt(i + 1) === 37 && src.charCodeAt(i + 2) === 37)
-      ) {
+      if (c === 37 && src.charCodeAt(i + 1) === 37 && src.charCodeAt(i + 2) !== 123) {
         this.at = this.lineEnd(i + 2);
         continue;
       }
