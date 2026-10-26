@@ -50,6 +50,84 @@ describe('flowchart rendering', () => {
     expect(wide.width).toBeGreaterThan(wide.height);
   });
 
+  describe('subgraph direction', () => {
+    const at = (svg: string, id: string): number[] =>
+      svg.match(new RegExp(`data-id="${id}" transform="translate\\(([-\\d.]+),([-\\d.]+)\\)"`))!.slice(1).map(Number);
+    const strip = (src: string): string => src.replace(/^\s*direction \w+\n/gm, '');
+
+    // Mermaid ignores a subgraph's direction when an edge crosses its border, and the subgraph
+    // inherits its parent's direction instead (https://mermaid.js.org/syntax/flowchart.html#limitation).
+    const linked = `flowchart LR
+  subgraph S["Sources"]
+    direction TB
+    s1[Files]
+    s2[Database]
+    s3[API]
+  end
+  subgraph P["Processing"]
+    direction TB
+    p1[Validate]
+    p2[Transform]
+  end
+  s1 --> p2
+  s2 --> p1
+  s3 --> p1`;
+
+    it('ignores the direction of a subgraph whose nodes link outside it', () => {
+      const svg = render(linked, options).svg;
+      expect(svg).toBe(render(strip(linked), options).svg);
+      expect(at(svg, 'p1')[0]).toBeGreaterThan(at(svg, 's1')[0]);
+    });
+
+    it('ignores the direction of a subgraph that an edge targets', () => {
+      const src = `flowchart LR
+  subgraph IN["Ingest"]
+    direction TB
+    a[EL Tools]
+    b[Transform]
+  end
+  subgraph SF["Snowflake"]
+    direction TB
+    subgraph RAW["Bronze"]
+      r1[RAW_DB]
+    end
+    subgraph STG["Silver"]
+      s1[STAGING_DB]
+    end
+  end
+  a --> RAW
+  b --> STG`;
+      expect(render(src, options).svg).toBe(render(strip(src), options).svg);
+    });
+
+    it('keeps the direction of a subgraph with no edge across its border', () => {
+      const src = `flowchart LR
+  A --> B
+  subgraph S
+    direction TB
+    x --> y --> z
+  end`;
+      const svg = render(src, options).svg;
+      const [x, y, z] = ['x', 'y', 'z'].map((id) => at(svg, id));
+      expect(y[1]).toBeGreaterThan(x[1]);
+      expect(z[1]).toBeGreaterThan(y[1]);
+      expect(Math.abs(y[0] - x[0])).toBeLessThan(1);
+    });
+
+    it('keeps the direction of an inner subgraph when only its parent links outside', () => {
+      const src = `flowchart LR
+  A --> P
+  subgraph P
+    subgraph Q
+      direction TB
+      x --> y
+    end
+  end`;
+      const svg = render(src, options).svg;
+      expect(at(svg, 'y')[1]).toBeGreaterThan(at(svg, 'x')[1]);
+    });
+  });
+
   it('themes through custom properties with fallbacks and no style element', () => {
     const { svg } = render('flowchart TD\n  A --> B', options);
     for (const token of ['--pele-bg', '--pele-fg', '--pele-line', '--pele-surface', '--pele-border', '--pele-font']) {
