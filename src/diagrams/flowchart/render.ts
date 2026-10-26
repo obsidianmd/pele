@@ -128,6 +128,20 @@ function draw(db: FlowDb, config: Config, options: RenderOptions, variant: FlowV
   graph.nodes.forEach((node, i) => {
     cnodes[i].parent = node.parentId !== undefined ? (index.get(node.parentId) ?? -1) : -1;
   });
+  // As in Mermaid, a subgraph that an edge crosses into or out of takes its parent's direction.
+  // An edge that ends at the subgraph itself counts as crossing it.
+  const within = (i: number, group: number): boolean => {
+    for (let p = i, hops = 0; p >= 0 && hops < 10000; p = cnodes[p].parent, hops++) if (p === group) return true;
+    return false;
+  };
+  for (const edge of graph.edges) {
+    const src = index.get(edge.start);
+    const dst = index.get(edge.end);
+    if (src === undefined || dst === undefined) continue;
+    for (let g = 0; g < cnodes.length; g++) {
+      if (cnodes[g].isGroup && cnodes[g].dir !== undefined && within(src, g) !== within(dst, g)) cnodes[g].dir = undefined;
+    }
+  }
 
   const rootDir = turned ? 'TB' : direction(db.direction);
   const flowsSideways = (i: number): boolean => {
