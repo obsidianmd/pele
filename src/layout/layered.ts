@@ -542,6 +542,8 @@ export function layered(nodes: LNode[], edges: LEdge[], opt: LayeredOptions): La
     }
   }
 
+  alignPorts(g, xs, empty);
+
   // A rank that holds nothing but the bends of edges is only there because some other edge has a
   // label or a twin. Its bends move onto the straight line between the ends of their edges, and
   // one that gets there is left out of the route, so that the edge is drawn as a single curve.
@@ -1003,6 +1005,35 @@ function follow(g: Graph, empty: Uint8Array | undefined, e: number, side: number
     e = side === 0 ? predE[predStart[u]] : succE[succStart[u]];
   }
   return e;
+}
+
+// Puts each border port in line with where its edge meets the node it leads to, so that the
+// edge runs straight across the narrow gap between the group's border and its nodes and does
+// its turning outside. Ports are kept at least `edgeSep` apart while being placed, which is
+// more than the ends on a short side are given, so without this the edge turns twice: once
+// outside the border and again in the gap. A rank of ports is left as it is unless every port
+// in it can move without passing or meeting its neighbours.
+function alignPorts(g: Graph, xs: Float64Array, empty: Uint8Array | undefined): void {
+  const { maxRank, KIND, EF, ET, EFD, ETD, succStart, succE, predStart, predE, layerStart, order } = g;
+  for (const [r, kind] of [
+    [0, Kind.StartPort],
+    [maxRank, Kind.EndPort],
+  ] as const) {
+    const s = layerStart[r];
+    const end = layerStart[r + 1];
+    const to: number[] = [];
+    for (let i = s; i < end; i++) {
+      const v = order[i];
+      const start = kind === Kind.StartPort;
+      if (KIND[v] !== kind || (start ? succStart[v + 1] - succStart[v] : predStart[v + 1] - predStart[v]) !== 1) break;
+      const e = follow(g, empty, start ? succE[succStart[v]] : predE[predStart[v]], start ? 1 : 0);
+      const at = start ? xs[ET[e]] + ETD[e] : xs[EF[e]] + EFD[e];
+      if (to.length > 0 && at < to[to.length - 1] + IN_LINE) break;
+      to.push(at);
+    }
+    if (to.length === 0 || to.length !== end - s) continue;
+    for (let i = s; i < end; i++) xs[order[i]] = to[i - s];
+  }
 }
 
 // How many ends that may move along it each node has on the side its edges arrive at, and on

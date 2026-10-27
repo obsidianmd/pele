@@ -618,6 +618,34 @@ describe('compound layout', () => {
     }
   });
 
+  it('runs an edge straight across the gap between a group border and the node it meets inside', () => {
+    for (const dir of ['TB', 'LR'] as Dir[]) {
+      const nodes = [group(100), group(101)];
+      const from = [0, 1, 2].map(() => nodes.push(cnode(60, 30, 0)) - 1);
+      const to = [0, 1, 2, 3, 4].map(() => nodes.push(cnode(60, 30, 1)) - 1);
+      nodes.forEach((node, i) => {
+        if (node.isGroup) return;
+        node.seq = i;
+        node.span = Math.min(node.w, node.h) - 8;
+      });
+      const edges: CEdge[] = [];
+      for (const b of to) for (const a of from) edges.push(edge(a, b, 40, 16));
+      compoundLayout(nodes, edges, dir, OPTIONS);
+      const across = dir === 'TB' ? 0 : 1;
+      for (const [i, e] of edges.entries()) {
+        const last = e.route.length - 3;
+        let k = 0;
+        while (k < last && !onBorder(nodes[1], e.route[k], e.route[k + 1])) k += 3;
+        expect(k, `${dir} edge ${i} enters its group`).toBeLessThan(last);
+        expect(e.route[k + across], `${dir} edge ${i} enters`).toBeCloseTo(e.route[last + across], 5);
+        k = last;
+        while (k > 0 && !onBorder(nodes[0], e.route[k], e.route[k + 1])) k -= 3;
+        expect(k, `${dir} edge ${i} leaves its group`).toBeGreaterThan(0);
+        expect(e.route[k + across], `${dir} edge ${i} leaves`).toBeCloseTo(e.route[across], 5);
+      }
+    }
+  });
+
   it('orders the nodes of a row of groups as one drawing, so that the edges between them do not cross', () => {
     const nodes = [group(100), group(101), group(102)];
     const stage = (g: number): number[] =>
