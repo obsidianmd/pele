@@ -201,6 +201,36 @@ describe('XY chart rendering', () => {
     expect(render(configured('    width: wide\n    showTitle: 3', CHART), options).svg).toBe(plain);
   });
 
+  it('places the legend beside, above or below the plot', () => {
+    // The first legend item is the bar series, so its swatch is a <rect>; the
+    // plot's first bar is the first <rect> inside the bars group.
+    const legendX = (svg: string): number => Number(/class="pele-legend-item"[^>]*>.*?<rect x="([\d.]+)"/.exec(svg)?.[1]);
+    const legendY = (svg: string): number => Number(/class="pele-legend-item"[^>]*>.*?<rect x="[\d.]+" y="([\d.-]+)"/.exec(svg)?.[1]);
+    const firstBar = (svg: string): [number, number] => {
+      const m = /class="pele-series pele-bars"[^>]*>(.*?)<\/g>/.exec(svg)!;
+      const r = /<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"/.exec(m[1])!;
+      return [Number(r[1]), Number(r[2])];
+    };
+    const positioned = (pos: string): string => render(configured(`    legendPosition: ${pos}`, CHART), options).svg;
+    const plain = render(CHART, options).svg;
+    const [barX, barY] = firstBar(plain);
+
+    // Default (right): the legend sits past the plot's left edge.
+    expect(legendX(plain)).toBeGreaterThan(barX);
+    // Left: the legend sits left of the plot, and the plot shifts right.
+    const left = positioned('left');
+    expect(legendX(left)).toBeLessThan(barX);
+    expect(firstBar(left)[0]).toBeGreaterThan(barX);
+    // Top: the legend sits above the plot.
+    const top = positioned('top');
+    expect(legendY(top)).toBeLessThan(barY);
+    // Bottom: the legend sits below the plot, past the default legend's height.
+    const bottom = positioned('bottom');
+    expect(legendY(bottom)).toBeGreaterThan(legendY(plain));
+    // An unknown position falls back to the default on the right.
+    expect(legendX(positioned('sideways'))).toBeCloseTo(legendX(plain), 6);
+  });
+
   it('writes the value of each bar with showDataLabel', () => {
     const chart = 'xychart\n x-axis [a, b, c]\n y-axis 0 --> 30\n bar [12, 2, 25]\n bar [7, 30, 1]';
     expect(render(chart, options).svg).not.toContain('pele-data-labels');

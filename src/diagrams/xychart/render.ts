@@ -34,6 +34,37 @@ function dimension(value: unknown, fallback: number): number {
   return typeof value === 'number' && value > 0 ? Math.round(Math.min(Math.max(value, 100), 4000)) : fallback;
 }
 
+function legendPosition(chart: Config): 'right' | 'left' | 'top' | 'bottom' {
+  const value = chart.legendPosition;
+  return value === 'left' || value === 'top' || value === 'bottom' ? value : 'right';
+}
+
+interface LegendRow {
+  items: { index: number; label: Label }[];
+  width: number;
+  height: number;
+}
+
+// Lay legend items out in centered rows across the available width, for a
+// legend above or below the plot. Items keep their swatch and label together.
+function legendRows(legend: { index: number; label: Label }[], maxWidth: number): LegendRow[] {
+  const rows: LegendRow[] = [];
+  let row: LegendRow = { items: [], width: 0, height: 0 };
+  for (const item of legend) {
+    const itemWidth = SWATCH + 8 + item.label.width;
+    const height = Math.max(ROW, item.label.height + 6);
+    if (row.items.length > 0 && row.width + 16 + itemWidth > maxWidth) {
+      rows.push(row);
+      row = { items: [], width: 0, height: 0 };
+    }
+    row.items.push(item);
+    row.width += (row.items.length > 1 ? 16 : 0) + itemWidth;
+    row.height = Math.max(row.height, height);
+  }
+  if (row.items.length > 0) rows.push(row);
+  return rows;
+}
+
 function finite(value: number | undefined): number | undefined {
   return typeof value === 'number' && isFinite(value) ? Math.min(Math.max(value, -LIMIT), LIMIT) : undefined;
 }
@@ -92,7 +123,14 @@ export function renderXyChart(model: XyChartModel, config: Config, options: Rend
       legendWidth = Math.max(legendWidth, label.width + SWATCH + 8);
     });
   }
-  const legendSpace = legend.length > 0 ? legendWidth + LEGEND_GAP : 0;
+  const position = legendPosition(chart);
+  const horizontalLegend = position === 'top' || position === 'bottom';
+  // A side legend takes room from the plot width; a top or bottom legend takes
+  // room from the plot height instead, as rows across the full inner width.
+  const legendSpace = !horizontalLegend && legend.length > 0 ? legendWidth + LEGEND_GAP : 0;
+  const rows = horizontalLegend ? legendRows(legend, width - 2 * pad) : [];
+  const legendBlockHeight = rows.reduce((sum, row) => sum + row.height, 0);
+  const legendBottomReserve = position === 'bottom' ? legendBlockHeight + LEGEND_GAP : 0;
 
   // The value range: as written, or taken from the data, where bars stand on zero and the
   // range grows to whole steps.
@@ -203,19 +241,19 @@ export function renderXyChart(model: XyChartModel, config: Config, options: Rend
 
   const bottomLabelHeight = !bottomLabels ? 0 : horizontal || x.type !== 'band' ? lineHeight : categoryHeight;
   const bottomSpace =
-    bottomTick + (bottomLabelHeight > 0 ? bottomLabelHeight + 4 : 0) + (bottomTitle.height > 0 ? bottomTitle.height + 4 : 0);
+    bottomTick + (bottomLabelHeight > 0 ? bottomLabelHeight + 4 : 0) + (bottomTitle.height > 0 ? bottomTitle.height + 4 : 0) + legendBottomReserve;
   const headroom = horizontal ? 0 : pointLabelWidth > 0 || showValues ? tinyHeight + 4 : leftLabels ? lineHeight / 2 : 0;
-  const top = pad + titleSpace + headroom;
+  const top = pad + titleSpace + headroom + (position === 'top' ? legendBlockHeight + LEGEND_GAP : 0);
   const plotHeight = Math.max(1, height - pad - bottomSpace - top);
   const bottom = top + plotHeight;
 
   const leftMarks = horizontal ? categoryMarks(plotHeight) : valueMarks(plotHeight, 56);
   const leftLabelWidth = leftLabels ? widest(leftMarks) : 0;
   const left =
-    pad + (leftTitle.height > 0 ? leftTitle.height + 6 : 0) + (leftLabelWidth > 0 ? leftLabelWidth + 6 : 0) + leftTick;
+    pad + (position === 'left' ? legendSpace : 0) + (leftTitle.height > 0 ? leftTitle.height + 6 : 0) + (leftLabelWidth > 0 ? leftLabelWidth + 6 : 0) + leftTick;
   const beside = Math.max(pointLabelWidth > 0 ? pointLabelWidth + 12 : 0, valueWidth > 0 ? valueWidth + 8 : 0);
   const reach = horizontal ? Math.min(width * 0.25, beside) : 0;
-  let plotWidth = Math.max(1, width - pad - left - legendSpace - reach);
+  let plotWidth = Math.max(1, width - pad - left - (position === 'right' ? legendSpace : 0) - reach);
   const bottomMarks = horizontal ? valueMarks(plotWidth, 80) : categoryMarks(plotWidth);
   if (bottomLabels && legendSpace + reach === 0) {
     let over = 0;
@@ -372,26 +410,45 @@ export function renderXyChart(model: XyChartModel, config: Config, options: Rend
   if (leftTitle.height > 0) {
     titles += `<g transform="translate(${num(pad + leftTitle.height / 2)},${num(top + plotHeight / 2)}) rotate(-90)">${labelSvg(leftTitle, 0, 0, '')}</g>`;
   }
-  titles += labelSvg(bottomTitle, left + plotWidth / 2, height - pad - bottomTitle.height / 2, '');
+  titles += labelSvg(bottomTitle, left + plotWidth / 2, height - pad - legendBottomReserve - bottomTitle.height / 2, '');
 
-  let legendOut = '';
-  let legendHeight = 0;
-  for (const item of legend) legendHeight += Math.max(ROW, item.label.height + 6);
-  let ly = top + Math.max(0, (plotHeight - legendHeight) / 2);
-  const lx = right + reach + LEGEND_GAP;
-  for (const { index, label } of legend) {
-    const row = Math.max(ROW, label.height + 6);
-    if (ly + row > height) break;
-    const y = ly + row / 2;
+  // One legend item: a swatch at (x, y) with its label to the right.
+  const legendItem = (index: number, label: Label, x: number, y: number): string => {
     const color = seriesColor(index);
-    legendOut +=
+    return (
       `<g class="pele-legend-item" data-id="${escText(plots[index].title)}">` +
       (plots[index].type === 'bar'
-        ? `<rect x="${num(lx)}" y="${num(y - SWATCH / 2)}" width="${SWATCH}" height="${SWATCH}" rx="2" fill="${color}"/>`
-        : `<path d="M${num(lx)},${num(y)}h${SWATCH}" stroke="${color}" stroke-width="2" stroke-linecap="round"/>`) +
-      labelSvg(label, lx + SWATCH + 8 + label.width / 2, y, '') +
-      '</g>';
-    ly += row;
+        ? `<rect x="${num(x)}" y="${num(y - SWATCH / 2)}" width="${SWATCH}" height="${SWATCH}" rx="2" fill="${color}"/>`
+        : `<path d="M${num(x)},${num(y)}h${SWATCH}" stroke="${color}" stroke-width="2" stroke-linecap="round"/>`) +
+      labelSvg(label, x + SWATCH + 8 + label.width / 2, y, '') +
+      '</g>'
+    );
+  };
+
+  let legendOut = '';
+  if (horizontalLegend) {
+    // Centered rows: above the plot for 'top', below the axis title for 'bottom'.
+    let ry = position === 'top' ? pad + titleSpace : height - pad - legendBlockHeight;
+    for (const row of rows) {
+      let rx = (width - row.width) / 2;
+      const y = ry + row.height / 2;
+      for (const { index, label } of row.items) {
+        legendOut += legendItem(index, label, rx, y);
+        rx += SWATCH + 8 + label.width + 16;
+      }
+      ry += row.height;
+    }
+  } else {
+    let legendHeight = 0;
+    for (const item of legend) legendHeight += Math.max(ROW, item.label.height + 6);
+    let ly = top + Math.max(0, (plotHeight - legendHeight) / 2);
+    const lx = position === 'left' ? pad : right + reach + LEGEND_GAP;
+    for (const { index, label } of legend) {
+      const row = Math.max(ROW, label.height + 6);
+      if (ly + row > height) break;
+      legendOut += legendItem(index, label, lx, ly + row / 2);
+      ly += row;
+    }
   }
 
   const content =
