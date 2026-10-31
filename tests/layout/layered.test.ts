@@ -2,6 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { layered, ledge, lnode } from '../../src/layout/layered.js';
 
 describe('layered', () => {
+  it.each([false, true])('avoids a crossing with either branch declaration order (%s)', (reverse) => {
+    const nodes = Array.from({ length: 5 }, () => lnode(48, 48));
+    const pairs = [[0, 1], [0, 2], [0, 3], [1, 2], [1, 4], [2, 3], [4, 3]];
+    if (reverse) [pairs[3], pairs[4]] = [pairs[4], pairs[3]];
+    const edges = pairs.map(([a, b], i) => ledge(a, b, 1, i >= 5 ? 15 : 0, i >= 5 ? 21 : 0));
+    const { crossings } = layered(nodes, edges, {
+      nodeSep: 40,
+      edgeSep: 16,
+      rankSep: 48,
+      portSep: 20,
+      orderOnly: true,
+    });
+    expect(crossings).toBe(0);
+  });
+
   it('orders a flat graph with groups side by side, and counts the crossings of that order', () => {
     const nodes = Array.from({ length: 6 }, () => lnode(40, 40));
     const of = [0, 1, 0, -1, 0, -1];

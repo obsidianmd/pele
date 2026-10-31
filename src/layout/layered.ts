@@ -440,29 +440,10 @@ export function layered(nodes: LNode[], edges: LEdge[], opt: LayeredOptions): La
   const order = new Int32Array(n);
   const pos = new Int32Array(n);
 
+  const fixed = new Uint8Array(maxRank + 1);
+  const g: Graph = { n, real, maxRank, W, KIND, RANK, EF, ET, EFD, ETD, succStart, succE, predStart, predE, layerStart, order, pos, offsets, fixed, GRP, groupParent: opt.groups?.parent };
   // Initial order: depth-first from the top so that subtrees start out contiguous.
-  {
-    const byRank = new Int32Array(n);
-    const fill = layerStart.slice(0, maxRank + 1);
-    for (let i = 0; i < n; i++) byRank[fill[RANK[i]]++] = i;
-    for (let r = 0; r <= maxRank; r++) fill[r] = layerStart[r];
-    const visited = new Uint8Array(n);
-    const stack: number[] = [];
-    for (let k = 0; k < n; k++) {
-      if (visited[byRank[k]]) continue;
-      stack.push(byRank[k]);
-      while (stack.length > 0) {
-        const v = stack.pop()!;
-        if (visited[v]) continue;
-        visited[v] = 1;
-        order[fill[RANK[v]]++] = v;
-        for (let j = succStart[v + 1] - 1; j >= succStart[v]; j--) {
-          const w = ET[succE[j]];
-          if (!visited[w]) stack.push(w);
-        }
-      }
-    }
-  }
+  depthFirst(g, false);
 
   const sortRank = (r: number, key: (v: number) => number): boolean => {
     const s = layerStart[r];
@@ -491,7 +472,6 @@ export function layered(nodes: LNode[], edges: LEdge[], opt: LayeredOptions): La
     }
   }
   // Preserve port order to avoid crossings outside the group.
-  const fixed = new Uint8Array(maxRank + 1);
   const hint = (v: number): number => (v < real && (nodes[v].kind === Kind.StartPort || nodes[v].kind === Kind.EndPort) ? nodes[v].hint : NaN);
   for (const r of [0, maxRank]) if (sortRank(r, hint)) fixed[r] = 1;
   const setPositions = (): void => {
@@ -501,8 +481,6 @@ export function layered(nodes: LNode[], edges: LEdge[], opt: LayeredOptions): La
     }
   };
   setPositions();
-
-  const g: Graph = { n, real, maxRank, W, KIND, RANK, EF, ET, EFD, ETD, succStart, succE, predStart, predE, layerStart, order, pos, offsets, fixed, GRP, groupParent: opt.groups?.parent };
 
   let crossings = 0;
   let declared = 0;
@@ -1679,6 +1657,33 @@ function pastLabels(g: Graph, xs: Float64Array, firstDummy: Int32Array, span: In
   }
 }
 
+function depthFirst(g: Graph, reverse: boolean): void {
+  const { n, maxRank, RANK, succStart, succE, ET, layerStart, order, fixed } = g;
+  const byRank = new Int32Array(n);
+  const fill = layerStart.slice(0, maxRank + 1);
+  for (let i = 0; i < n; i++) byRank[fill[RANK[i]]++] = i;
+  for (let r = 0; r <= maxRank; r++) fill[r] = layerStart[r];
+  const visited = new Uint8Array(n);
+  const stack: number[] = [];
+  for (let k = 0; k < n; k++) {
+    if (visited[byRank[k]]) continue;
+    stack.push(byRank[k]);
+    while (stack.length > 0) {
+      const v = stack.pop()!;
+      if (visited[v]) continue;
+      visited[v] = 1;
+      if (!fixed[RANK[v]]) order[fill[RANK[v]]++] = v;
+      const from = succStart[v];
+      const to = succStart[v + 1];
+      const step = reverse ? 1 : -1;
+      for (let j = reverse ? from : to - 1, end = reverse ? to : from - 1; j !== end; j += step) {
+        const w = ET[succE[j]];
+        if (!visited[w]) stack.push(w);
+      }
+    }
+  }
+}
+
 // Returns [final crossings, crossings before grouping or reordering].
 function reduceCrossings(g: Graph, nodes: LNode[]): [number, number] {
   const { n, real, maxRank, W, EF, ET, EFD, ETD, succStart, succE, predStart, predE, layerStart, order, pos, offsets, fixed, GRP, groupParent } = g;
@@ -2009,6 +2014,21 @@ function reduceCrossings(g: Graph, nodes: LNode[]): [number, number] {
   order.set(chosen);
   settlePositions();
   bestOrder.set(chosen);
+  // The opposite depth-first seed can escape a minimum that local swaps cannot improve.
+  if (small && !GRP && best > 0 && nodes.every((node) => node.pin === 0)) {
+    depthFirst(g, true);
+    settlePositions();
+    sweep(false, false);
+    const c = count();
+    if (c < best) {
+      best = c;
+      bestOrder.set(order);
+      chosenOut = outOfOrder();
+    } else {
+      order.set(bestOrder);
+      settlePositions();
+    }
+  }
   // The retained grouped order may exceed the ungrouped threshold; recount it.
   if (GRP) best = count();
 
