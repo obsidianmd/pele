@@ -265,4 +265,14 @@ describe('zoom', () => {
     tap(shrunk, link);
     expect(click(shrunk, link).defaultPrevented).toBe(false);
   });
+
+  it('keeps the padding around a drawing that overflows its element', () => {
+    globals.getComputedStyle = () => ({ position: 'relative', getPropertyValue: () => '24px' });
+    // A drawing as tall as the element's content, so taller than the room inside its padding.
+    const drawing = drawingIn(400);
+    Object.assign(drawing.element, { clientWidth: 448 });
+    const zoom = enableZoom(drawing.element, { controls: false });
+    zoom.zoomTo(zoom.fit * 1.01);
+    expect(Number(drawing.svg.getAttribute('viewBox')?.split(' ')[3])).toBeCloseTo(444 / 1.01);
+  });
 });

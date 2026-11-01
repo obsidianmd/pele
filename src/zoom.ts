@@ -105,15 +105,20 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
     if (!svg || scale !== 0) return;
     const at = svg.getBoundingClientRect();
     rest = { width: at.width, height: at.height };
-    box = { width: Math.max(rest.width, element.clientWidth), height: Math.max(rest.height, element.clientHeight) };
+    // clientWidth and clientHeight already include the padding, but the drawing's size does
+    // not. Counting the padding on the drawing's side keeps an overflowing view from being
+    // pulled over it when enlarged.
+    const style = view().getComputedStyle(element);
+    const pad = (side: string): number => parseFloat(style.getPropertyValue(`padding-${side}`)) || 0;
+    box = {
+      width: Math.max(rest.width + pad('left') + pad('right'), element.clientWidth),
+      height: Math.max(rest.height + pad('top') + pad('bottom'), element.clientHeight),
+    };
     roomy = box.width > rest.width + 1 || box.height > rest.height + 1;
     if (!roomy) box = rest;
     // Padding keeps a drawing at rest off the element's edges. An enlarged one is a view, which
     // reaches them: margins of the opposite size carry it over the padding.
-    const style = view().getComputedStyle(element);
-    bleed = ['Top', 'Right', 'Bottom', 'Left']
-      .map((side) => `${-(parseFloat(style.getPropertyValue(`padding-${side.toLowerCase()}`)) || 0)}px`)
-      .join(' ');
+    bleed = ['top', 'right', 'bottom', 'left'].map((side) => `${-pad(side)}px`).join(' ');
   };
 
   let bar: HTMLElement | undefined;
