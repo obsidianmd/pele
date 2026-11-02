@@ -80,7 +80,7 @@ export function arrowSize(mask: number, tw: number, th: number): ArrowSize {
   };
 }
 
-export function drawArrow(mask: number, w: number, h: number, attrs: string): string {
+export function arrowPoints(mask: number, w: number, h: number): number[] {
   const axis = arrowAxis(mask);
   const x = w / 2;
   const y = h / 2;
@@ -121,6 +121,11 @@ export function drawArrow(mask: number, w: number, h: number, attrs: string): st
     p.push(x0, y1);
     if (mask & LEFT) p.push(x0, cy + ky, -x, cy, x0, cy - ky);
   }
+  return p;
+}
+
+export function drawArrow(mask: number, w: number, h: number, attrs: string): string {
+  const p = arrowPoints(mask, w, h);
   let points = '';
   for (let i = 0; i < p.length; i += 2) points += (i ? ' ' : '') + num(p[i]) + ',' + num(p[i + 1]);
   return `<polygon points="${points}" stroke-linejoin="round"${attrs}/>`;

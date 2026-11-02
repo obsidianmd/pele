@@ -44,6 +44,10 @@ export interface RenderOptions {
   icons?: IconResolver;
   math?: MathResolver;
   config?: Config;
+  block?: {
+    // Defaults to orthogonal. Self-connections keep their loops in all modes.
+    edgeRouting?: 'orthogonal' | 'straight' | 'prefer-straight';
+  };
   // The time gantt charts treat as now. Defaults to the current time.
   now?: number | Date;
 }

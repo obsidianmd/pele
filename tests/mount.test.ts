@@ -90,6 +90,8 @@ const fontSet = () => {
 };
 const SANKEY = 'sankey\n\nGrid,Homes,113\nGrid,Industry,342\nGrid,Losses,56\n';
 const FLOW = 'flowchart LR\n  A[One] --> B[Two] --> C[Three] --> D[Four] --> E[Five] --> F[Six] --> G[Seven]';
+const BLOCK = 'block-beta\n  columns 3\n  a space:2\n  space:3\n  space:2 b\n  a --> b';
+const edgePaths = (svg: string) => [...svg.matchAll(/class="pele-edge"[^>]*><path d="([^"]+)"/g)].map((m) => m[1]);
 
 describe('mount', () => {
   it('draws a chart for the room the element has, and again when that changes', () => {
@@ -244,6 +246,86 @@ describe('mount', () => {
     expect([...new Set(seen)]).toEqual(['Inter, sans-serif|Menlo']);
     expect(el.innerHTML).toContain('font-family:var(--pele-font,Inter, sans-serif)');
     expect(el.innerHTML).toContain('--_fm:var(--pele-font-mono,Menlo)');
+  });
+
+  it('uses the routing variable inherited by the diagram container', () => {
+    const { el } = styled({ fontFamily: 'sans-serif', vars: { '--pele-block-edge-routing': ' straight ' } });
+    const handle = mount(el, BLOCK, { ...options, zoom: false });
+    expect(edgePaths(handle.result!.svg)).toEqual(edgePaths(render(BLOCK, { ...options, block: { edgeRouting: 'straight' } }).svg));
+    expect(edgePaths(handle.result!.svg)[0]).not.toContain('Q');
+  });
+
+  it('honours routing set directly on the SVG after the first drawing', () => {
+    const { el } = styled({ fontFamily: 'sans-serif' }, { fontFamily: 'sans-serif', vars: { '--pele-block-edge-routing': 'straight' } });
+    const handle = mount(el, BLOCK, { ...options, zoom: false });
+    expect(edgePaths(handle.result!.svg)[0]).toMatch(/^M[\d.,]+L[\d.,]+$/);
+  });
+
+  it('gives explicit routing options precedence over CSS', () => {
+    for (const edgeRouting of ['straight', 'orthogonal', 'prefer-straight'] as const) {
+      const css = edgeRouting === 'straight' ? 'orthogonal' : 'straight';
+      const { el } = styled({ fontFamily: 'sans-serif', vars: { '--pele-block-edge-routing': css } });
+      const handle = mount(el, BLOCK, { ...options, block: { edgeRouting }, zoom: false });
+      expect(edgePaths(handle.result!.svg)).toEqual(edgePaths(render(BLOCK, { ...options, block: { edgeRouting } }).svg));
+    }
+  });
+
+  it('refreshes changed CSS routing without parsing again or redrawing unchanged styles', () => {
+    const vars = { '--pele-block-edge-routing': '' };
+    const { el } = styled({ fontFamily: 'sans-serif', vars });
+    let parses = 0;
+    let draws = 0;
+    const handle = mountWith(spying(() => draws++, () => parses++), el, BLOCK, { zoom: false });
+    const original = handle.result!.svg;
+    expect(edgePaths(original)[0]).toContain('Q');
+    vars['--pele-block-edge-routing'] = 'straight';
+    handle.refresh();
+    expect(edgePaths(handle.result!.svg)[0]).toMatch(/^M[\d.,]+L[\d.,]+$/);
+    const count = draws;
+    handle.refresh();
+    expect(draws).toBe(count);
+    for (const value of ['orthogonal', 'invalid', '']) {
+      vars['--pele-block-edge-routing'] = value;
+      handle.refresh();
+      expect(handle.result!.svg).toBe(original);
+    }
+    expect(parses).toBe(1);
+  });
+
+  it('resolves CSS again when explicit routing is removed through update', () => {
+    const { el } = styled({ fontFamily: 'sans-serif', vars: { '--pele-block-edge-routing': 'straight' } });
+    const handle = mount(el, BLOCK, { ...options, block: { edgeRouting: 'orthogonal' }, zoom: false });
+    expect(edgePaths(handle.result!.svg)[0]).toContain('Q');
+    handle.update(BLOCK, { ...options, zoom: false });
+    expect(edgePaths(handle.result!.svg)[0]).not.toContain('Q');
+  });
+
+  it('ignores CSS routing changes for other diagram types', () => {
+    const vars = { '--pele-block-edge-routing': '' };
+    const { el } = styled({ fontFamily: 'sans-serif', vars });
+    let draws = 0;
+    const handle = mountWith(spying(() => draws++), el, FLOW, { zoom: false });
+    const count = draws;
+    vars['--pele-block-edge-routing'] = 'straight';
+    handle.refresh();
+    expect(draws).toBe(count);
+  });
+
+  it('activates prefer-straight through CSS and refreshes when switching modes', () => {
+    const vars = { '--pele-block-edge-routing': ' prefer-straight ' };
+    const { el } = styled({ fontFamily: 'sans-serif', vars });
+    const handle = mount(el, BLOCK, { ...options, zoom: false });
+    expect(edgePaths(handle.result!.svg)).toEqual(edgePaths(render(BLOCK, { ...options, block: { edgeRouting: 'prefer-straight' } }).svg));
+    const adjacent = 'block\n  columns 2\n  a space\n  space b\n  a --> b';
+    handle.update(adjacent);
+    const bent = handle.result!.svg;
+    expect(edgePaths(bent)[0]).toContain('Q');
+    vars['--pele-block-edge-routing'] = 'straight';
+    handle.refresh();
+    expect(edgePaths(handle.result!.svg)[0]).not.toContain('Q');
+    vars['--pele-block-edge-routing'] = 'prefer-straight';
+    handle.refresh();
+    expect(handle.result!.svg).toBe(bent);
   });
 
   it('finds a variable that is set on the drawing and not on the element', () => {

@@ -10,7 +10,7 @@ import { layoutLabel, type Label } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
 import type { RenderOptions, Rendered } from '../../types.js';
 import { tighten, titleRoom } from '../common/fit-width.js';
-import { OVERHANG, arrowAxis, arrowMask, arrowSize, drawArrow } from './arrows.js';
+import { OVERHANG, arrowAxis, arrowMask, arrowPoints, arrowSize, drawArrow } from './arrows.js';
 import { layout, type Cell } from './layout.js';
 import type { Block, BlockModel } from './types.js';
 
@@ -134,6 +134,72 @@ function border(v: View, tx: number, ty: number, out: number[]): void {
   out.push(v.x + dx * k, v.y + dy * k);
 }
 
+// Refines the bounding-box intersection for the nonrectangular outlines in straight mode.
+function straightBorder(v: View, tx: number, ty: number, out: number[]): void {
+  const point: number[] = [];
+  border(v, tx, ty, point);
+  const dx = point[0] - v.x;
+  const dy = point[1] - v.y;
+  const hw = v.bw / 2;
+  const hh = v.bh / 2;
+  let reach = 1;
+  if (v.kind === Kind.Arrow) {
+    const p = arrowPoints(v.mask, v.bw, v.bh);
+    for (let i = 0, j = p.length - 2; i < p.length; j = i, i += 2) {
+      const ax = p[j];
+      const ay = p[j + 1];
+      const ex = p[i] - ax;
+      const ey = p[i + 1] - ay;
+      const cross = dx * ey - dy * ex;
+      if (cross === 0) continue;
+      const k = (ax * ey - ay * ex) / cross;
+      const t = (ax * dy - ay * dx) / cross;
+      if (k >= 0 && t >= 0 && t <= 1) reach = Math.min(reach, k);
+    }
+  } else if (v.kind === Kind.Leaf && !isRound(v) && v.shape !== 'diam') {
+    const inside = (k: number): boolean => {
+      const x = dx * k;
+      const y = dy * k;
+      const slant = v.bh / 4;
+      if (v.shape === 'lean-r') return x >= -hw + slant * (0.5 - y / v.bh) && x <= hw - slant * (0.5 + y / v.bh);
+      if (v.shape === 'lean-l') return x >= -hw + slant * (0.5 + y / v.bh) && x <= hw - slant * (0.5 - y / v.bh);
+      if (v.shape === 'trap-b' || v.shape === 'trap-t') {
+        return Math.abs(x) <= hw - slant * (0.5 + (v.shape === 'trap-t' ? y : -y) / v.bh);
+      }
+      if (v.shape === 'odd') return x >= -hw + slant * (1 - Math.abs(y) / hh);
+      if (v.shape === 'rounded' || v.shape === 'stadium') {
+        const r = v.shape === 'stadium' ? hh : Math.min(12, hh);
+        return Math.hypot(Math.max(0, Math.abs(x) - hw + r), Math.max(0, Math.abs(y) - hh + r)) <= r;
+      }
+      return (
+        Math.abs(x) <= hw - shapeInset(v.shape, v.bw, v.bh, x < 0 ? 3 : 1, y) &&
+        Math.abs(y) <= hh - shapeInset(v.shape, v.bw, v.bh, y < 0 ? 0 : 2, x)
+      );
+    };
+    if (!inside(1)) {
+      let lo = 0;
+      let hi = 1;
+      for (let i = 0; i < 32; i++) {
+        const mid = (lo + hi) / 2;
+        if (inside(mid)) lo = mid;
+        else hi = mid;
+      }
+      reach = (lo + hi) / 2;
+    }
+  }
+  out.push(v.x + dx * reach, v.y + dy * reach);
+}
+
+function straightEdge(s: View, t: View, precise = false): number[] {
+  const points: number[] = [];
+  // Concentric blocks have no center-to-center direction; join their right boundaries.
+  const concentric = s.x === t.x && s.y === t.y;
+  const clip = precise ? straightBorder : border;
+  clip(s, concentric ? s.x + 1 : t.x, t.y, points);
+  clip(t, concentric ? t.x + 1 : s.x, s.y, points);
+  return points;
+}
+
 function crossesBox(x1: number, y1: number, x2: number, y2: number, v: View): boolean {
   const l = v.x - v.bw / 2 + 1;
   const r = v.x + v.bw / 2 - 1;
@@ -164,7 +230,7 @@ function hits(points: number[], s: View, t: View, obstacles: View[]): number {
 }
 
 // A straight line where the two blocks share a row or a column, otherwise one bend between facing sides.
-function routeEdge(s: View, t: View, shift: number, obstacles: View[] | undefined): number[] {
+function routeEdge(s: View, t: View, shift: number, obstacles: View[] | undefined, alternate = false): number[] {
   const sl = s.x - s.bw / 2;
   const sr = s.x + s.bw / 2;
   const st = s.y - s.bh / 2;
@@ -213,7 +279,7 @@ function routeEdge(s: View, t: View, shift: number, obstacles: View[] | undefine
   const down = t.y > s.y ? 1 : -1;
   const across = [edgeX(s, s.y, right), s.y, t.x, s.y, t.x, edgeY(t, t.x, -down)];
   const along = [s.x, edgeY(s, s.x, down), s.x, t.y, edgeX(t, t.y, -right), t.y];
-  const wide = Math.abs(t.x - s.x) >= Math.abs(t.y - s.y);
+  const wide = (Math.abs(t.x - s.x) >= Math.abs(t.y - s.y)) !== alternate;
   let best = wide ? across : along;
   if (obstacles === undefined) return best;
   let least = hits(best, s, t, obstacles);
@@ -225,10 +291,45 @@ function routeEdge(s: View, t: View, shift: number, obstacles: View[] | undefine
     least = count;
   }
   if (least === 0) return best;
-  const direct: number[] = [];
-  border(s, t.x, t.y, direct);
-  border(t, s.x, s.y, direct);
+  const direct = straightEdge(s, t);
   return hits(direct, s, t, obstacles) < least ? direct : best;
+}
+
+// A crossing at one point is fine; a shared run makes separate connections look joined.
+function sharedRuns(points: number[], routes: number[][] | undefined): number {
+  let length = 0;
+  for (const other of routes ?? []) {
+    for (let i = 0; i + 3 < points.length; i += 2) {
+      const vertical = points[i] === points[i + 2];
+      const horizontal = points[i + 1] === points[i + 3];
+      if (!vertical && !horizontal) continue;
+      const axis = vertical ? 1 : 0;
+      const across = 1 - axis;
+      for (let j = 0; j + 3 < other.length; j += 2) {
+        if (Math.abs(points[i + across] - other[j + across]) >= 1 || other[j + across] !== other[j + across + 2]) continue;
+        const lo = Math.max(Math.min(points[i + axis], points[i + axis + 2]), Math.min(other[j + axis], other[j + axis + 2]));
+        const hi = Math.min(Math.max(points[i + axis], points[i + axis + 2]), Math.max(other[j + axis], other[j + axis + 2]));
+        length += Math.max(0, hi - lo);
+      }
+    }
+  }
+  return length;
+}
+
+function preferredEdges(s: View, t: View, shift: number, edge: Block, minShaft: number, obstacles: View[] | undefined): number[][] {
+  const direct = straightEdge(s, t, true);
+  // With no obstacle list, routeEdge returns only axis-aligned candidates, never its diagonal fallback.
+  const first = routeEdge(s, t, shift, undefined);
+  const second = routeEdge(s, t, shift, undefined, true);
+  const firstHits = obstacles ? hits(first, s, t, obstacles) : 0;
+  const secondHits = obstacles ? hits(second, s, t, obstacles) : 0;
+  const directHits = obstacles ? hits(direct, s, t, obstacles) : 0;
+  const trim = markerTrim(edge.arrowTypeStart ?? '') + markerTrim(edge.arrowTypeEnd ?? '');
+  const short = Math.hypot(direct[2] - direct[0], direct[3] - direct[1]) < trim + minShaft;
+  if (!short && directHits <= Math.min(firstHits, secondHits)) return [direct];
+  if (secondHits < firstHits) return [second];
+  if (firstHits < secondHits) return [first];
+  return [first, second];
 }
 
 // Builds the path through two or three points, rounding the bend and leaving room for markers.
@@ -337,7 +438,23 @@ function labelSpot(p: number[], at: number, w: number, h: number, s: View, t: Vi
 
 // Stacks overlapping labels along their shared line, if they fit between its markers and cover no other block or title.
 // Returns the extra length needed to fit the labels.
-function stackLabels(stack: number[], routes: Route[], legs: number[][], s: View, t: View, obstacles: Box[] | undefined): number {
+function stackLabels(stack: number[], routes: Route[], legs: number[][], s: View, t: View, obstacles: Box[] | undefined, straight: boolean): number {
+  const first = legs[stack[0]];
+  if (straight && first[0] !== first[2] && first[1] !== first[3]) {
+    // Separate diagonal labels across the line without moving the blocks or bending the edge.
+    const length = Math.hypot(t.x - s.x, t.y - s.y);
+    const nx = -(t.y - s.y) / length;
+    const ny = (t.x - s.x) / length;
+    const sizes = stack.map((i) => Math.abs(nx) * (routes[i].label.width + 8) + Math.abs(ny) * routes[i].label.height);
+    let at = -sizes.reduce((sum, size) => sum + size + LABEL_GAP, -LABEL_GAP) / 2;
+    stack.forEach((i, k) => {
+      const offset = at + sizes[k] / 2;
+      routes[i].lx += nx * offset;
+      routes[i].ly += ny * offset;
+      at += sizes[k] + LABEL_GAP;
+    });
+    return 0;
+  }
   const vertical = legs[stack[0]][0] === legs[stack[0]][2];
   let lo = -Infinity;
   let hi = Infinity;
@@ -415,6 +532,8 @@ function draw(model: BlockModel, config: Config, options: RenderOptions, tight: 
   const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const pad = options.padding ?? 8;
   const icons = options.icons;
+  const routing = options.block?.edgeRouting;
+  const straight = routing === 'straight' || routing === 'prefer-straight';
   const configured = (config.block as Config | undefined)?.padding;
   const gap = Math.min(typeof configured === 'number' && configured >= 0 ? Math.min(configured, 200) : GAP, tight ? 6 : Infinity);
   const wrap = tight ? 80 : WRAP;
@@ -571,6 +690,7 @@ function draw(model: BlockModel, config: Config, options: RenderOptions, tight: 
     drawn.push(edge);
   }
   const check = drawn.length * obstacles.length <= OBSTACLE_BUDGET ? obstacles : undefined;
+  const checkRoutes = drawn.length * drawn.length <= OBSTACLE_BUDGET;
   const routes: Route[] = [];
   const stacks = new Map<number, number[]>();
   const legs: number[][] = [];
@@ -578,6 +698,25 @@ function draw(model: BlockModel, config: Config, options: RenderOptions, tight: 
     const seen = new Map<number, number>();
     routes.length = 0;
     stacks.clear();
+    const candidates: number[][][] = [];
+    const occupied: number[][] = [];
+    if (routing === 'prefer-straight') {
+      // Reserve fixed routes first, including straight arrows declared after a bend.
+      for (let i = 0; i < drawn.length; i++) {
+        const [s, t] = ends[i];
+        if (s === t) continue;
+        const key = Math.min(s.index, t.index) * order.length + Math.max(s.index, t.index);
+        const total = pairs.get(key) ?? 1;
+        const k = seen.get(key) ?? 0;
+        seen.set(key, k + 1);
+        const step = labelled.has(key) ? Math.round(edgeSize * 1.5) + 2 : 14;
+        const shift = (k - (total - 1) / 2) * step;
+        const choices = preferredEdges(s, t, shift, drawn[i], Math.max(12, size), check);
+        candidates[i] = choices;
+        if (checkRoutes && choices.length === 1) occupied.push(choices[0]);
+      }
+      seen.clear();
+    }
     for (let i = 0; i < drawn.length; i++) {
       const [s, t] = ends[i];
       const key = Math.min(s.index, t.index) * order.length + Math.max(s.index, t.index);
@@ -595,7 +734,17 @@ function draw(model: BlockModel, config: Config, options: RenderOptions, tight: 
         ly = py - r / 2;
       } else {
         const step = labelled.has(key) ? Math.round(edgeSize * 1.5) + 2 : 14;
-        points = routeEdge(s, t, (k - (total - 1) / 2) * step, check);
+        const shift = (k - (total - 1) / 2) * step;
+        if (routing === 'prefer-straight') {
+          const choices = candidates[i];
+          points = choices[0];
+          if (checkRoutes && choices.length > 1) {
+            if (sharedRuns(choices[1], occupied) < sharedRuns(points, occupied)) points = choices[1];
+            occupied.push(points);
+          }
+        } else {
+          points = straight ? straightEdge(s, t, true) : routeEdge(s, t, shift, check);
+        }
         const n = points.length;
         // The label goes on the longer leg.
         const firstLeg = Math.abs(points[2] - points[0]) + Math.abs(points[3] - points[1]);
@@ -623,7 +772,7 @@ function draw(model: BlockModel, config: Config, options: RenderOptions, tight: 
     for (const stack of stacks.values()) {
       if (stack.length < 2) continue;
       const [s, t] = ends[stack[0]];
-      const short = stackLabels(stack, routes, legs, s, t, blocked);
+      const short = stackLabels(stack, routes, legs, s, t, blocked, straight);
       const vertical = legs[stack[0]][0] === legs[stack[0]][2];
       // Keep columns narrow to fit the host in tight layouts.
       if (grow && short > 0 && (vertical || !tight) && widen(parents, s, t, vertical, Math.ceil(short), base)) grown = true;
@@ -671,7 +820,7 @@ function draw(model: BlockModel, config: Config, options: RenderOptions, tight: 
     }
     return maxX - minX;
   };
-  if (settle(drawn.length * drawn.length <= OBSTACLE_BUDGET)) {
+  if (settle(!straight && drawn.length * drawn.length <= OBSTACLE_BUDGET)) {
     const before = overlap();
     const narrow = bound();
     // A container stretched by its row gives some of a new gap back, so the gap may take a few rounds.
