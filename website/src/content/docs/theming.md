@@ -129,6 +129,16 @@ When diagrams are rendered through [`mount()`](/api#mount), set `--pele-block-ed
 
 The variable inherits from the diagram's ancestors, so a class on a note can control all block diagrams inside it. Other diagram types are unaffected. `orthogonal`, an unset variable, or an invalid value preserves the existing router. Self-connections retain their loops.
 
+Use `prefer-straight` for direct connections that fall back to a bend when the visible line would be too short after allowing for arrowheads, or when a bend crosses fewer blocks:
+
+```css
+.straight-blocks {
+  --pele-block-edge-routing: prefer-straight;
+}
+```
+
+The fallback compares the two L-shaped routes. It chooses fewer block crossings first, then less shared line. Bends account for straight connections and other fixed routes regardless of statement order, as well as bends chosen earlier. Simple crossings between arrows do not count as shared line. This is a local preference, not a guarantee that every overlap or block crossing can be avoided. The blocks keep their grid positions. As with the default router, obstacle checks are skipped for very large diagrams; shared-line checks also have a work limit.
+
 For Obsidian, save the CSS above as `.obsidian/snippets/straight-blocks.css` in the vault and enable it under **Settings → Appearance → CSS snippets**. Add this property at the top of a note, outside its Mermaid code blocks:
 
 ```yaml

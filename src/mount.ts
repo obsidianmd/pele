@@ -63,10 +63,13 @@ function fontsFor(style: CSSStyleDeclaration, drawing: HTMLElement | null): Font
   };
 }
 
-function blockRoutingFor(style: CSSStyleDeclaration, drawing: HTMLElement | null, options: MountOptions): 'orthogonal' | 'straight' {
+type BlockRouting = NonNullable<NonNullable<RenderOptions['block']>['edgeRouting']>;
+
+function blockRoutingFor(style: CSSStyleDeclaration, drawing: HTMLElement | null, options: MountOptions): BlockRouting {
   if (options.block?.edgeRouting !== undefined) return options.block.edgeRouting;
   const own = drawing ? windowOf(drawing).getComputedStyle(drawing) : style;
-  return own.getPropertyValue('--pele-block-edge-routing').trim() === 'straight' ? 'straight' : 'orthogonal';
+  const value = own.getPropertyValue('--pele-block-edge-routing').trim();
+  return value === 'straight' || value === 'prefer-straight' ? value : 'orthogonal';
 }
 
 // The fonts a diagram is drawn with: those of the element's document, which its CSS names, and
@@ -146,7 +149,7 @@ export function mountWith(engine: Engine, element: HTMLElement, text: string, op
   // Ids in one drawing must not be those of another in the same page.
   const idPrefix = `pele-${copy}-${++mounted}`;
   let fonts: Fonts = {};
-  let blockRouting: 'orthogonal' | 'straight' = 'orthogonal';
+  let blockRouting: BlockRouting = 'orthogonal';
   // Whether the width there is can change how this diagram is drawn. Not known until asked.
   let adapts: boolean | undefined;
   let drawnFor = -1;

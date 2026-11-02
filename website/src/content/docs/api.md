@@ -129,7 +129,7 @@ All options are optional.
 | `icons` | `(name: string) => string \| null \| undefined` | Supplies trusted SVG markup for icon names such as `fa:fa-car`. See [Security](/security#app-responsibilities). |
 | `math` | `(tex: string, size: number) => MathMarkup \| null \| undefined` | Typesets `$$...$$` in labels. See [Math](#math). |
 | `config` | `object` | Default Mermaid settings. Frontmatter and directives override them. Support varies by diagram type. |
-| `block` | `{ edgeRouting?: 'orthogonal' \| 'straight' }` | Block edge routing. Defaults to `'orthogonal'`, preserving the existing router. `'straight'` connects block boundaries directly, allowing crossings. Self-connections keep their loops. |
+| `block` | `{ edgeRouting?: 'orthogonal' \| 'straight' \| 'prefer-straight' }` | Block edge routing. Defaults to `'orthogonal'`, preserving the existing router. `'straight'` always connects block boundaries directly. `'prefer-straight'` falls back to a bend for short connections or fewer block crossings, preferring bends with less shared line. Self-connections keep their loops. |
 
 ### RenderResult
 

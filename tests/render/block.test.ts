@@ -353,6 +353,117 @@ describe('block rendering', () => {
     }
   });
 
+  it('prefers direct connections when they are long enough and cross no more blocks', () => {
+    const source = 'block\n  columns 3\n  a space:2\n  space:3\n  space:2 b\n  a --> b';
+    const preferred = render(source, { ...options, block: { edgeRouting: 'prefer-straight' } });
+    expect(paths(preferred.svg)).toEqual(paths(render(source, { ...options, block: { edgeRouting: 'straight' } }).svg));
+    expect(paths(render(source, options).svg)[0]).toContain('Q');
+    expect(boxes(preferred.svg)).toEqual(layoutOf(source));
+  });
+
+  it('uses a bend for short diagonals in every direction', () => {
+    const grid = 'block\n  columns 2\n  a b\n  c d\n';
+    for (const [from, to] of [['a', 'd'], ['d', 'a'], ['b', 'c'], ['c', 'b']]) {
+      const source = `${grid}  ${from} --> ${to}`;
+      const preferred = render(source, { ...options, block: { edgeRouting: 'prefer-straight' } });
+      expect(paths(preferred.svg)[0]).toContain('Q');
+      expect(paths(render(source, options).svg)[0]).not.toContain('Q');
+      expect(boxes(preferred.svg)).toEqual(layoutOf(grid));
+    }
+  });
+
+  it('accounts for arrowheads at both ends when checking direct shaft length', () => {
+    const grid = 'block\n  columns 2\n  a space\n  space b\n';
+    const preferred = { ...options, config: { block: { padding: 18 } }, block: { edgeRouting: 'prefer-straight' as const } };
+    expect(paths(render(`${grid}  a --> b`, preferred).svg)[0]).not.toContain('Q');
+    expect(paths(render(`${grid}  a <--> b`, preferred).svg)[0]).toContain('Q');
+  });
+
+  it('uses a bend when the direct line crosses more blocks', () => {
+    const source = 'block\n  columns 3\n  a space:2\n  space middle space\n  space:2 b\n  a --> b';
+    const preferred = render(source, { ...options, block: { edgeRouting: 'prefer-straight' } });
+    expect(paths(preferred.svg)[0]).toContain('Q');
+    expect(paths(render(source, { ...options, block: { edgeRouting: 'straight' } }).svg)[0]).not.toContain('Q');
+    expect(boxes(preferred.svg)).toEqual(layoutOf(source));
+  });
+
+  it('keeps a direct line when both bends cross more blocks', () => {
+    const source = 'block\n  columns 3\n  a space top\n  space:3\n  bottom space b\n  a --> b';
+    expect(paths(render(source, { ...options, block: { edgeRouting: 'prefer-straight' } }).svg)[0]).not.toContain('Q');
+  });
+
+  it('chooses an equally clear bend that shares less line with an earlier arrow', () => {
+    const grid = 'block\n  columns 3\n  a space:2\n  space middle space\n  space:2 b\n';
+    const source = `${grid}  a --> middle\n  a --> b`;
+    const preferred = { ...options, block: { edgeRouting: 'prefer-straight' as const } };
+    const together = paths(render(source, preferred).svg);
+    const alone = paths(render(`${grid}  a --> b`, preferred).svg)[0];
+    expect(together.every((path) => path.includes('Q'))).toBe(true);
+    expect(together[1]).not.toBe(alone);
+    const starts = together.map((path) => path.match(/-?[\d.]+/g)!.slice(0, 2).map(Number));
+    expect(starts[0]).not.toEqual(starts[1]);
+    expect(render(source, preferred).svg).toBe(render(source, preferred).svg);
+  });
+
+  it('allows a simple arrow crossing without changing the preferred bend', () => {
+    const grid = 'block\n  columns 6\n  a space:5\n  space:3 p space q\n  space:2 middle space:3\n  space:6\n  space:4 b space\n';
+    const preferred = { ...options, block: { edgeRouting: 'prefer-straight' as const } };
+    const alone = paths(render(`${grid}  a --> b`, preferred).svg)[0];
+    const together = paths(render(`${grid}  p --> q\n  a --> b`, preferred).svg);
+    expect(alone).toContain('Q');
+    expect(together[1]).toBe(alone);
+  });
+
+  it('prioritizes fewer block crossings over avoiding a shared run', () => {
+    const grid = 'block\n  columns 3\n  a space top\n  space middle space\n  space:2 b\n';
+    const preferred = { ...options, block: { edgeRouting: 'prefer-straight' as const } };
+    const alone = paths(render(`${grid}  a --> b`, preferred).svg)[0];
+    const together = paths(render(`${grid}  middle --> a\n  a --> b`, preferred).svg);
+    expect(alone).toContain('Q');
+    expect(together[1]).toBe(alone);
+  });
+
+  it('routes bends around straight arrows declared later in the source', () => {
+    const grid = `block
+  columns 3
+  space
+  block:TP["Threat Perceptions"]
+    columns 1
+    PS(["Perceived susceptibility"])
+    PV(["Perceived severity"])
+  end
+  SE(["Self efficacy"])
+  block:MF["Modifying Factors"]
+    columns 1
+    D(["Demographic"])
+    P(["Psychosocial"])
+  end
+  space
+  AL(["Action Likelihood"])
+  space
+  block:LA["Likelihood of action"]
+    columns 1
+    PB(["Perceived benefits"])
+    PC(["Perceived costs/barriers"])
+  end
+  CA(["Cues to action"])
+`;
+    const edges = ['MF --> TP', 'MF --> LA', 'MF --> AL', 'TP --> AL', 'LA --> AL', 'SE --> AL', 'CA --> AL'];
+    const preferred = { ...options, block: { edgeRouting: 'prefer-straight' as const } };
+    for (const statements of [edges, [...edges].reverse()]) {
+      const source = grid + statements.join('\n');
+      const { svg } = render(source, preferred);
+      const path = paths(svg)[statements.indexOf('MF --> TP')];
+      expect(path).toContain('Q');
+      const [x, y] = path.match(/-?[\d.]+/g)!.slice(0, 2).map(Number);
+      const mf = boxes(svg).get('MF')!;
+      expect(x).toBeCloseTo(mf.x, 1);
+      expect(y).toBeCloseTo(mf.y - mf.h / 2, 1);
+      expect(paths(svg)[statements.indexOf('MF --> AL')]).toMatch(/^M[\d.,]+L[\d.,]+$/);
+      expect(boxes(svg)).toEqual(layoutOf(grid));
+    }
+  });
+
   it('clips direct connections to circle and diamond outlines', () => {
     for (const shape of ['a(("A"))', 'a{"A"}']) {
       const { svg } = render(`block\n  columns 3\n  ${shape} space:2\n  space:3\n  space:2 b\n  b --> a`, { ...options, block: { edgeRouting: 'straight' } });

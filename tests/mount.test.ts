@@ -262,7 +262,7 @@ describe('mount', () => {
   });
 
   it('gives explicit routing options precedence over CSS', () => {
-    for (const edgeRouting of ['straight', 'orthogonal'] as const) {
+    for (const edgeRouting of ['straight', 'orthogonal', 'prefer-straight'] as const) {
       const css = edgeRouting === 'straight' ? 'orthogonal' : 'straight';
       const { el } = styled({ fontFamily: 'sans-serif', vars: { '--pele-block-edge-routing': css } });
       const handle = mount(el, BLOCK, { ...options, block: { edgeRouting }, zoom: false });
@@ -309,6 +309,23 @@ describe('mount', () => {
     vars['--pele-block-edge-routing'] = 'straight';
     handle.refresh();
     expect(draws).toBe(count);
+  });
+
+  it('activates prefer-straight through CSS and refreshes when switching modes', () => {
+    const vars = { '--pele-block-edge-routing': ' prefer-straight ' };
+    const { el } = styled({ fontFamily: 'sans-serif', vars });
+    const handle = mount(el, BLOCK, { ...options, zoom: false });
+    expect(edgePaths(handle.result!.svg)).toEqual(edgePaths(render(BLOCK, { ...options, block: { edgeRouting: 'prefer-straight' } }).svg));
+    const adjacent = 'block\n  columns 2\n  a space\n  space b\n  a --> b';
+    handle.update(adjacent);
+    const bent = handle.result!.svg;
+    expect(edgePaths(bent)[0]).toContain('Q');
+    vars['--pele-block-edge-routing'] = 'straight';
+    handle.refresh();
+    expect(edgePaths(handle.result!.svg)[0]).not.toContain('Q');
+    vars['--pele-block-edge-routing'] = 'prefer-straight';
+    handle.refresh();
+    expect(handle.result!.svg).toBe(bent);
   });
 
   it('finds a variable that is set on the drawing and not on the element', () => {

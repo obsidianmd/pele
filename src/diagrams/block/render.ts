@@ -230,7 +230,7 @@ function hits(points: number[], s: View, t: View, obstacles: View[]): number {
 }
 
 // A straight line where the two blocks share a row or a column, otherwise one bend between facing sides.
-function routeEdge(s: View, t: View, shift: number, obstacles: View[] | undefined): number[] {
+function routeEdge(s: View, t: View, shift: number, obstacles: View[] | undefined, alternate = false): number[] {
   const sl = s.x - s.bw / 2;
   const sr = s.x + s.bw / 2;
   const st = s.y - s.bh / 2;
@@ -279,7 +279,7 @@ function routeEdge(s: View, t: View, shift: number, obstacles: View[] | undefine
   const down = t.y > s.y ? 1 : -1;
   const across = [edgeX(s, s.y, right), s.y, t.x, s.y, t.x, edgeY(t, t.x, -down)];
   const along = [s.x, edgeY(s, s.x, down), s.x, t.y, edgeX(t, t.y, -right), t.y];
-  const wide = Math.abs(t.x - s.x) >= Math.abs(t.y - s.y);
+  const wide = (Math.abs(t.x - s.x) >= Math.abs(t.y - s.y)) !== alternate;
   let best = wide ? across : along;
   if (obstacles === undefined) return best;
   let least = hits(best, s, t, obstacles);
@@ -293,6 +293,43 @@ function routeEdge(s: View, t: View, shift: number, obstacles: View[] | undefine
   if (least === 0) return best;
   const direct = straightEdge(s, t);
   return hits(direct, s, t, obstacles) < least ? direct : best;
+}
+
+// A crossing at one point is fine; a shared run makes separate connections look joined.
+function sharedRuns(points: number[], routes: number[][] | undefined): number {
+  let length = 0;
+  for (const other of routes ?? []) {
+    for (let i = 0; i + 3 < points.length; i += 2) {
+      const vertical = points[i] === points[i + 2];
+      const horizontal = points[i + 1] === points[i + 3];
+      if (!vertical && !horizontal) continue;
+      const axis = vertical ? 1 : 0;
+      const across = 1 - axis;
+      for (let j = 0; j + 3 < other.length; j += 2) {
+        if (Math.abs(points[i + across] - other[j + across]) >= 1 || other[j + across] !== other[j + across + 2]) continue;
+        const lo = Math.max(Math.min(points[i + axis], points[i + axis + 2]), Math.min(other[j + axis], other[j + axis + 2]));
+        const hi = Math.min(Math.max(points[i + axis], points[i + axis + 2]), Math.max(other[j + axis], other[j + axis + 2]));
+        length += Math.max(0, hi - lo);
+      }
+    }
+  }
+  return length;
+}
+
+function preferredEdges(s: View, t: View, shift: number, edge: Block, minShaft: number, obstacles: View[] | undefined): number[][] {
+  const direct = straightEdge(s, t, true);
+  // With no obstacle list, routeEdge returns only axis-aligned candidates, never its diagonal fallback.
+  const first = routeEdge(s, t, shift, undefined);
+  const second = routeEdge(s, t, shift, undefined, true);
+  const firstHits = obstacles ? hits(first, s, t, obstacles) : 0;
+  const secondHits = obstacles ? hits(second, s, t, obstacles) : 0;
+  const directHits = obstacles ? hits(direct, s, t, obstacles) : 0;
+  const trim = markerTrim(edge.arrowTypeStart ?? '') + markerTrim(edge.arrowTypeEnd ?? '');
+  const short = Math.hypot(direct[2] - direct[0], direct[3] - direct[1]) < trim + minShaft;
+  if (!short && directHits <= Math.min(firstHits, secondHits)) return [direct];
+  if (secondHits < firstHits) return [second];
+  if (firstHits < secondHits) return [first];
+  return [first, second];
 }
 
 // Builds the path through two or three points, rounding the bend and leaving room for markers.
@@ -495,7 +532,8 @@ function draw(model: BlockModel, config: Config, options: RenderOptions, tight: 
   const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
   const pad = options.padding ?? 8;
   const icons = options.icons;
-  const straight = options.block?.edgeRouting === 'straight';
+  const routing = options.block?.edgeRouting;
+  const straight = routing === 'straight' || routing === 'prefer-straight';
   const configured = (config.block as Config | undefined)?.padding;
   const gap = Math.min(typeof configured === 'number' && configured >= 0 ? Math.min(configured, 200) : GAP, tight ? 6 : Infinity);
   const wrap = tight ? 80 : WRAP;
@@ -652,6 +690,7 @@ function draw(model: BlockModel, config: Config, options: RenderOptions, tight: 
     drawn.push(edge);
   }
   const check = drawn.length * obstacles.length <= OBSTACLE_BUDGET ? obstacles : undefined;
+  const checkRoutes = drawn.length * drawn.length <= OBSTACLE_BUDGET;
   const routes: Route[] = [];
   const stacks = new Map<number, number[]>();
   const legs: number[][] = [];
@@ -659,6 +698,25 @@ function draw(model: BlockModel, config: Config, options: RenderOptions, tight: 
     const seen = new Map<number, number>();
     routes.length = 0;
     stacks.clear();
+    const candidates: number[][][] = [];
+    const occupied: number[][] = [];
+    if (routing === 'prefer-straight') {
+      // Reserve fixed routes first, including straight arrows declared after a bend.
+      for (let i = 0; i < drawn.length; i++) {
+        const [s, t] = ends[i];
+        if (s === t) continue;
+        const key = Math.min(s.index, t.index) * order.length + Math.max(s.index, t.index);
+        const total = pairs.get(key) ?? 1;
+        const k = seen.get(key) ?? 0;
+        seen.set(key, k + 1);
+        const step = labelled.has(key) ? Math.round(edgeSize * 1.5) + 2 : 14;
+        const shift = (k - (total - 1) / 2) * step;
+        const choices = preferredEdges(s, t, shift, drawn[i], Math.max(12, size), check);
+        candidates[i] = choices;
+        if (checkRoutes && choices.length === 1) occupied.push(choices[0]);
+      }
+      seen.clear();
+    }
     for (let i = 0; i < drawn.length; i++) {
       const [s, t] = ends[i];
       const key = Math.min(s.index, t.index) * order.length + Math.max(s.index, t.index);
@@ -676,7 +734,17 @@ function draw(model: BlockModel, config: Config, options: RenderOptions, tight: 
         ly = py - r / 2;
       } else {
         const step = labelled.has(key) ? Math.round(edgeSize * 1.5) + 2 : 14;
-        points = straight ? straightEdge(s, t, true) : routeEdge(s, t, (k - (total - 1) / 2) * step, check);
+        const shift = (k - (total - 1) / 2) * step;
+        if (routing === 'prefer-straight') {
+          const choices = candidates[i];
+          points = choices[0];
+          if (checkRoutes && choices.length > 1) {
+            if (sharedRuns(choices[1], occupied) < sharedRuns(points, occupied)) points = choices[1];
+            occupied.push(points);
+          }
+        } else {
+          points = straight ? straightEdge(s, t, true) : routeEdge(s, t, shift, check);
+        }
         const n = points.length;
         // The label goes on the longer leg.
         const firstLeg = Math.abs(points[2] - points[0]) + Math.abs(points[3] - points[1]);
