@@ -129,6 +129,7 @@ All options are optional.
 | `icons` | `(name: string) => string \| null \| undefined` | Supplies trusted SVG markup for icon names such as `fa:fa-car`. See [Security](/security#app-responsibilities). |
 | `math` | `(tex: string, size: number) => MathMarkup \| null \| undefined` | Typesets `$$...$$` in labels. See [Math](#math). |
 | `config` | `object` | Default Mermaid settings. Frontmatter and directives override them. Support varies by diagram type. |
+| `block` | `{ edgeRouting?: 'orthogonal' \| 'straight' }` | Block edge routing. Defaults to `'orthogonal'`, preserving the existing router. `'straight'` connects block boundaries directly, allowing crossings. Self-connections keep their loops. |
 
 ### RenderResult
 
@@ -185,7 +186,7 @@ diagram.update('flowchart LR\n  A[Draft] --> B[Published]');
 
 `mount()` and `update()` don't throw when the text can't be drawn. The container shows the error instead: over the bottom edge of the last diagram, which is dimmed, or in place of a diagram if none could be drawn yet. Read it from `error`, or handle it with `onError`. Its color is [`--pele-error`](/theming).
 
-Call `refresh()` after changing fonts or moving the container. Resizes and pending web fonts are handled automatically.
+Call `refresh()` after changing fonts, [CSS block edge routing](/theming#block-edge-routing), or moving the container. Resizes and pending web fonts are handled automatically.
 
 Use a container whose width does not depend on the diagram, such as a block element.
 
@@ -205,7 +206,7 @@ Use a container whose width does not depend on the diagram, such as a block elem
 | `error` | Why that text couldn't be drawn, or `undefined`. |
 | `zoom` | The diagram's [`Zoom`](#zoom), or `undefined` if the `zoom` option is `false`. |
 | `update(text, options?)` | Updates the source and optionally replaces the options. Hidden diagrams may wait until visible to redraw. |
-| `refresh()` | Re-renders if the container width or the fonts have changed since the last render. |
+| `refresh()` | Re-renders if the container width, fonts, or CSS block edge routing have changed since the last render. |
 | `destroy()` | Stops observing the container. Leaves the diagram in place. |
 
 Use `await mountAsync(container, source)` from [`pele/lazy`](#imports) to load and mount a diagram. Before updating to another diagram type, load it with `load()`.

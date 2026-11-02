@@ -29,6 +29,7 @@ Switch between light and dark colors without re-rendering the diagram.
 | `--pele-heading-weight` | `bold` | Headings inside a diagram, such as class names and section labels |
 | `--pele-bold-weight` | `bold` | Bold text in labels |
 | `--pele-radius` | `4px` | Corner radius of rounded shapes |
+| `--pele-block-edge-routing` | `orthogonal` | Block connection routing when using `mount()`. See [Block edge routing](#block-edge-routing). |
 
 ### Series colors
 
@@ -115,6 +116,31 @@ render(source, { monospace: ['members'] });
 | `attributes` | Attribute types, names and keys in ER diagrams, styled by `.pele-er-type`, `.pele-er-name` and `.pele-er-keys` |
 | `files` | File and directory names in tree view diagrams, styled by `.pele-label` inside `.pele-tree-file` and `.pele-tree-dir` |
 | `messages` | Message text on arrows in sequence diagrams, styled by `.pele-edge-label` |
+
+## Block edge routing
+
+When diagrams are rendered through [`mount()`](/api#mount), set `--pele-block-edge-routing` to `straight` to connect block outlines with direct lines:
+
+```css
+.straight-blocks {
+  --pele-block-edge-routing: straight;
+}
+```
+
+The variable inherits from the diagram's ancestors, so a class on a note can control all block diagrams inside it. Other diagram types are unaffected. `orthogonal`, an unset variable, or an invalid value preserves the existing router. Self-connections retain their loops.
+
+For Obsidian, save the CSS above as `.obsidian/snippets/straight-blocks.css` in the vault and enable it under **Settings → Appearance → CSS snippets**. Add this property at the top of a note, outside its Mermaid code blocks:
+
+```yaml
+---
+cssclasses:
+  - straight-blocks
+---
+```
+
+Keep the `block-beta` diagram source unchanged. This requires an Obsidian integration that uses this version of Pele's `mount()` API. An integration using `render()` directly must read the CSS property and pass `block.edgeRouting` itself; installing a snippet alone does not add support to an older Obsidian release.
+
+An explicit `block.edgeRouting` option overrides CSS. The DOM-free `render()` API only reads its options. After changing the snippet or note class, the host should call the mounted diagram's `refresh()` method; re-rendering the note also applies the setting.
 
 ## Classes
 
