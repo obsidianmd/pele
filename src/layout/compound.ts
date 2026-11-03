@@ -21,6 +21,9 @@ export interface CNode {
   seq: number;
   // How much of a side its edges may spread along, measured across the flow; 0 keeps them at its middle.
   span: number;
+  // Room across the flow past the far side, below or to the right, that its edges do not meet:
+  // x and y stay where they meet it.
+  after: number;
   x: number;
   y: number;
 }
@@ -402,7 +405,7 @@ export function shiftLayout(nodes: CNode[], edges: CEdge[], ox: number, oy: numb
 }
 
 export function cnode(w: number, h: number, parent = -1): CNode {
-  return { w, h, parent, isGroup: false, dir: undefined, padX: 0, padTop: 0, padBottom: 0, minW: 0, seq: 0, span: 0, x: 0, y: 0 };
+  return { w, h, parent, isGroup: false, dir: undefined, padX: 0, padTop: 0, padBottom: 0, minW: 0, seq: 0, span: 0, after: 0, x: 0, y: 0 };
 }
 
 function startSide(dir: Dir): Side {
@@ -563,6 +566,7 @@ export function compoundLayout(nodes: CNode[], edges: CEdge[], rootDir: Dir, opt
       const node = nodes[item];
       const ln = sized ? lnode(vertical ? node.w : node.h, vertical ? node.h : node.w) : lnode(0, 0);
       ln.span = node.isGroup ? Math.min(node.span, ln.w - 2 * node.padX) : node.span;
+      ln.after = sized ? node.after : 0;
       ln.key = keyed ? key[item] : NaN;
       lnodes.push(ln);
     });
@@ -683,7 +687,7 @@ export function compoundLayout(nodes: CNode[], edges: CEdge[], rootDir: Dir, opt
   const layOut = (level: Level, lnodes: LNode[], ledges: LEdge[]): { lnodes: LNode[]; ledges: LEdge[]; size: LayeredResult } => {
     if (!ordered) return { lnodes, ledges, size: layered(lnodes, ledges, opt) };
     const given: number[] = [];
-    for (const ln of lnodes) given.push(ln.w, ln.h, ln.kind, ln.pin, ln.hint, ln.key, ln.span);
+    for (const ln of lnodes) given.push(ln.w, ln.h, ln.kind, ln.pin, ln.hint, ln.key, ln.span, ln.after);
     for (const le of ledges) given.push(le.tail, le.head, le.minlen, le.labelW, le.labelH, le.tailDx, le.headDx, +le.tailFixed, +le.headFixed);
     let past = laid.get(level.id);
     if (!past) laid.set(level.id, (past = []));

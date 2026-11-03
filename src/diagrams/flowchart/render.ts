@@ -157,10 +157,9 @@ function draw(db: FlowDb, config: Config, options: RenderOptions, variant: FlowV
     if (src === undefined || dst === undefined) continue;
     const label = layoutLabel(edge.label, edge.labelType === 'markdown', measurer, edgeSize, wrapWidth);
     if (src === dst) {
-      // A self-loop sits beside the node, across the flow, and the node's box grows to hold it.
+      // A self-loop sits beside the node, across the flow, with room kept for it past that side.
       views[src].loops++;
-      if (flowsSideways(src)) cnodes[src].h += 2 * (LOOP + (label.height > 0 ? label.height + 8 : 0));
-      else cnodes[src].w += 2 * (LOOP + (label.width > 0 ? label.width + 12 : 0));
+      cnodes[src].after += LOOP + (flowsSideways(src) ? (label.height > 0 ? label.height + 8 : 0) : label.width > 0 ? label.width + 12 : 0);
     }
     drawn.push(edge);
     edgeLabels.push(label);

@@ -63,7 +63,8 @@ export function laneLayout(nodes: CNode[], edges: CEdge[], dir: Dir, opt: Layere
     }
   }
   const along = (c: CNode): number => (sideways ? c.w : c.h);
-  const cross = (c: CNode): number => (sideways ? c.h : c.w);
+  // Lanes keep a node's room past its far side on both sides of it, so that it stays centered.
+  const cross = (c: CNode): number => (sideways ? c.h : c.w) + 2 * c.after;
 
   const lnodes: LNode[] = real.map((i) => lnode(cross(nodes[i]), along(nodes[i])));
   const ledges: LEdge[] = [];
@@ -371,10 +372,12 @@ export function laneLayout(nodes: CNode[], edges: CEdge[], dir: Dir, opt: Layere
       box[i * 4 + 3] = -Infinity;
     }
     const grow = (g: number, c: CNode): void => {
-      if (c.x - c.w / 2 < box[g * 4]) box[g * 4] = c.x - c.w / 2;
-      if (c.y - c.h / 2 < box[g * 4 + 1]) box[g * 4 + 1] = c.y - c.h / 2;
-      if (c.x + c.w / 2 > box[g * 4 + 2]) box[g * 4 + 2] = c.x + c.w / 2;
-      if (c.y + c.h / 2 > box[g * 4 + 3]) box[g * 4 + 3] = c.y + c.h / 2;
+      const hw = c.w / 2 + (sideways ? 0 : c.after);
+      const hh = c.h / 2 + (sideways ? c.after : 0);
+      if (c.x - hw < box[g * 4]) box[g * 4] = c.x - hw;
+      if (c.y - hh < box[g * 4 + 1]) box[g * 4 + 1] = c.y - hh;
+      if (c.x + hw > box[g * 4 + 2]) box[g * 4 + 2] = c.x + hw;
+      if (c.y + hh > box[g * 4 + 3]) box[g * 4 + 3] = c.y + hh;
     };
     for (const i of real) if (nodes[i].parent >= 0 && laneSlot[nodes[i].parent] < 0) grow(nodes[i].parent, nodes[i]);
     for (const g of inner) {

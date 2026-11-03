@@ -35,6 +35,7 @@ function randomGraph(seed: number): { nodes: CNode[]; edges: CEdge[]; dir: Dir }
     const node = cnode(30 + int(120), 30 + int(50), parent);
     node.seq = i;
     if (seed % 2 === 0) node.span = Math.min(node.w, node.h) - 24;
+    if (seed % 3 === 0 && i % 4 === 0) node.after = 10 + ((i * 7) % 50);
     nodes.push(node);
   }
   const edges: CEdge[] = [];
@@ -44,6 +45,17 @@ function randomGraph(seed: number): { nodes: CNode[]; edges: CEdge[]; dir: Dir }
     edges.push(edge(int(nodes.length), int(nodes.length), labelled ? 20 + int(60) : 0, labelled ? 24 : 0));
   }
   return { nodes, edges, dir: DIRS[int(4)] };
+}
+
+// The box a node keeps clear: its own, and the room past its far side across the flow of its level.
+function room(nodes: CNode[], i: number, rootDir: Dir): [number, number, number, number] {
+  const node = nodes[i];
+  let dir: Dir | undefined;
+  for (let p = node.parent; p >= 0 && dir === undefined; p = nodes[p].parent) dir = nodes[p].dir;
+  const across = (dir ?? rootDir) === 'TB' || (dir ?? rootDir) === 'BT' ? 'x' : 'y';
+  const x1 = node.x + node.w / 2 + (across === 'x' ? node.after : 0);
+  const y1 = node.y + node.h / 2 + (across === 'y' ? node.after : 0);
+  return [node.x - node.w / 2, node.y - node.h / 2, x1, y1];
 }
 
 function isAncestor(nodes: CNode[], a: number, b: number): boolean {
@@ -68,24 +80,28 @@ describe('compound layout', () => {
       const where = `seed ${seed}`;
 
       expect(Number.isFinite(size.width) && Number.isFinite(size.height), where).toBe(true);
+      const boxes = nodes.map((_, i) => room(nodes, i, dir));
       nodes.forEach((node, i) => {
+        const [x0, y0, x1, y1] = boxes[i];
         expect(Number.isFinite(node.x) && Number.isFinite(node.y), `${where} node ${i}`).toBe(true);
-        expect(node.x - node.w / 2, `${where} node ${i} left`).toBeGreaterThanOrEqual(-0.5);
-        expect(node.y - node.h / 2, `${where} node ${i} top`).toBeGreaterThanOrEqual(-0.5);
-        expect(node.x + node.w / 2, `${where} node ${i} right`).toBeLessThanOrEqual(size.width + 0.5);
-        expect(node.y + node.h / 2, `${where} node ${i} bottom`).toBeLessThanOrEqual(size.height + 0.5);
+        expect(x0, `${where} node ${i} left`).toBeGreaterThanOrEqual(-0.5);
+        expect(y0, `${where} node ${i} top`).toBeGreaterThanOrEqual(-0.5);
+        expect(x1, `${where} node ${i} right`).toBeLessThanOrEqual(size.width + 0.5);
+        expect(y1, `${where} node ${i} bottom`).toBeLessThanOrEqual(size.height + 0.5);
         if (node.parent >= 0) {
           const parent = nodes[node.parent];
-          expect(Math.abs(node.x - parent.x) + node.w / 2, `${where} node ${i} in parent`).toBeLessThanOrEqual(parent.w / 2 + 0.5);
-          expect(Math.abs(node.y - parent.y) + node.h / 2, `${where} node ${i} in parent`).toBeLessThanOrEqual(parent.h / 2 + 0.5);
+          expect(x0, `${where} node ${i} in parent`).toBeGreaterThanOrEqual(parent.x - parent.w / 2 - 0.5);
+          expect(y0, `${where} node ${i} in parent`).toBeGreaterThanOrEqual(parent.y - parent.h / 2 - 0.5);
+          expect(x1, `${where} node ${i} in parent`).toBeLessThanOrEqual(parent.x + parent.w / 2 + 0.5);
+          expect(y1, `${where} node ${i} in parent`).toBeLessThanOrEqual(parent.y + parent.h / 2 + 0.5);
         }
       });
 
       for (let a = 0; a < nodes.length; a++) {
         for (let b = a + 1; b < nodes.length; b++) {
           if (nodes[a].parent !== nodes[b].parent) continue;
-          const overlapX = (nodes[a].w + nodes[b].w) / 2 - Math.abs(nodes[a].x - nodes[b].x);
-          const overlapY = (nodes[a].h + nodes[b].h) / 2 - Math.abs(nodes[a].y - nodes[b].y);
+          const overlapX = Math.min(boxes[a][2], boxes[b][2]) - Math.max(boxes[a][0], boxes[b][0]);
+          const overlapY = Math.min(boxes[a][3], boxes[b][3]) - Math.max(boxes[a][1], boxes[b][1]);
           expect(overlapX > 0.5 && overlapY > 0.5, `${where} nodes ${a} and ${b} overlap`).toBe(false);
         }
       }
@@ -219,6 +235,28 @@ describe('compound layout', () => {
     const back = edges[12].route;
     expect(back[1]).toBeCloseTo(nodes[12].y - 20, 5);
     for (const x of into) expect(Math.abs(x - back[0])).toBeGreaterThanOrEqual(8);
+  });
+
+  it('keeps room past the far side of a node clear without moving where its edges meet it', () => {
+    for (const dir of DIRS) {
+      const across = dir === 'TB' || dir === 'BT' ? 'x' : 'y';
+      const half = across === 'x' ? 30 : 20;
+      const lay = (edges: CEdge[]): { nodes: CNode[]; size: number } => {
+        const nodes = [cnode(60, 40), cnode(60, 40), cnode(60, 40), cnode(60, 40)];
+        nodes.forEach((node, i) => (node.seq = i));
+        nodes[1].after = 100;
+        const size = compoundLayout(nodes, edges, dir, OPTIONS);
+        return { nodes, size: across === 'x' ? size.width : size.height };
+      };
+      // A chain through the node stays in line, at the near edge of the drawing.
+      const chain = lay([edge(0, 1), edge(1, 2)]);
+      for (const node of chain.nodes.slice(0, 3)) expect(node[across], dir).toBeCloseTo(half, 5);
+      expect(chain.size, dir).toBeCloseTo(2 * half + 100, 5);
+      // A node beside it in its rank sits past the room.
+      const { nodes } = lay([edge(0, 1), edge(0, 3)]);
+      const [near, far] = nodes[1][across] < nodes[3][across] ? [nodes[1], nodes[3]] : [nodes[3], nodes[1]];
+      expect(far[across] - near[across], dir).toBeGreaterThanOrEqual(2 * half + near.after + OPTIONS.nodeSep - 0.5);
+    }
   });
 
   it('stands a rank that only sends edges on one line, and hangs a rank that only receives them from one', () => {
