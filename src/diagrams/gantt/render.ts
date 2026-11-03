@@ -354,8 +354,8 @@ export function renderGantt(model: GanttDb, config: Config, options: RenderOptio
     (excluded ? `<g class="pele-excluded" fill="var(--_a)">${excluded}</g>` : '') +
     `<g class="pele-grid" fill="none"><path d="${grid}" stroke="var(--_b)" stroke-dasharray="1 3"/><path d="${axisLine}" stroke="var(--_b)"/></g>` +
     (vertLines ? `<g class="pele-verts" fill="none" stroke="var(--_l)" stroke-width="1.5" stroke-dasharray="4 3">${vertLines}</g>` : '') +
-    today +
     `<g class="pele-tasks" font-size="${num(labelSize)}">${tasksOut}</g>` +
+    today +
     `<g class="pele-section-labels" font-size="${num(sectionSize)}">${sectionOut}</g>` +
     `<g class="pele-axis" font-size="${tickSize}" fill="var(--_m)">${axisBottom}${axisTop}</g>` +
     (vertLabels ? `<g class="pele-vert-labels" font-size="${num(labelSize)}">${vertLabels}</g>` : '');

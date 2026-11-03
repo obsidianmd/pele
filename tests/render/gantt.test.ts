@@ -68,6 +68,12 @@ describe('gantt rendering', () => {
     expect(render(BASIC.replace('dateFormat', 'todayMarker off\n  dateFormat'), options).svg).not.toContain('pele-today');
   });
 
+  it('draws the today marker over completed tasks', () => {
+    const { svg } = render('gantt\n dateFormat YYYY-MM-DD\n Done :done, d, 2014-01-01, 30d', options);
+    expect(count(svg, 'pele-today')).toBe(1);
+    expect(svg.indexOf('class="pele-today"')).toBeGreaterThan(svg.indexOf('class="pele-task pele-done"'));
+  });
+
   it('moves the today marker with the injected time', () => {
     const at = (now: Date): number => Number(/class="pele-today"><path d="M([\d.]+),/.exec(render(BASIC, { ...options, now }).svg)![1]);
     expect(at(new Date(2014, 0, 20))).toBeGreaterThan(at(new Date(2014, 0, 10)));
