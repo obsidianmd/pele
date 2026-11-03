@@ -299,10 +299,9 @@ function draw(model: UsecaseModel, config: Config, options: RenderOptions, turne
     const semantic = edge.relationshipType === 'include' || edge.relationshipType === 'extend';
     const label = text(semantic ? `«${edge.label}»` : edge.label, edge.labelType === 'markdown', measurer, small, 200);
     if (src === dst) {
-      // A self-relationship loops out across the flow, and the node's box grows to hold it.
+      // A self-relationship loops out across the flow, with room kept for it past that side.
       views[src].loops++;
-      if (sideways) cnodes[src].h += 2 * (LOOP + (label.height > 0 ? label.height + 8 : 0));
-      else cnodes[src].w += 2 * (LOOP + (label.width > 0 ? label.width + 12 : 0));
+      cnodes[src].after += LOOP + (sideways ? (label.height > 0 ? label.height + 8 : 0) : label.width > 0 ? label.width + 12 : 0);
     }
     drawn.push(edge);
     edgeLabels.push(label);

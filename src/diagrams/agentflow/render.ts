@@ -176,10 +176,9 @@ function draw(db: AgentflowDb, config: Config, options: RenderOptions, turned: b
       continue;
     }
     if (src === dst) {
-      // A self-loop sits beside the node, across the flow, and the node's box grows to hold it.
+      // A self-loop sits beside the node, across the flow, with room kept for it past that side.
       views[src].loops++;
-      if (flowsSideways(src)) cnodes[src].h += 2 * (LOOP + (label.height > 0 ? label.height + 8 : 0));
-      else cnodes[src].w += 2 * (LOOP + (label.width > 0 ? label.width + 12 : 0));
+      cnodes[src].after += LOOP + (flowsSideways(src) ? (label.height > 0 ? label.height + 8 : 0) : label.width > 0 ? label.width + 12 : 0);
     }
     drawn.push(edge);
     edgeLabels.push(label);
@@ -240,12 +239,13 @@ function draw(db: AgentflowDb, config: Config, options: RenderOptions, turned: b
     const blocked = (r: number[]): boolean => {
       for (let k = 0; k < cnodes.length; k++) {
         const c = cnodes[k];
+        const sideways = flowsSideways(k);
         if (
           k !== i &&
           !c.isGroup &&
-          c.x + c.w / 2 > Math.min(r[0], r[3]) - 1 &&
+          c.x + c.w / 2 + (sideways ? 0 : c.after) > Math.min(r[0], r[3]) - 1 &&
           c.x - c.w / 2 < Math.max(r[0], r[3]) + 1 &&
-          c.y + c.h / 2 > Math.min(r[1], r[4]) - 1 &&
+          c.y + c.h / 2 + (sideways ? c.after : 0) > Math.min(r[1], r[4]) - 1 &&
           c.y - c.h / 2 < Math.max(r[1], r[4]) + 1
         ) {
           return true;

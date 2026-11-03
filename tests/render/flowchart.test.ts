@@ -446,6 +446,30 @@ describe('flowchart rendering', () => {
     expect(label('L_E_F_0')).toBeLessThan(y('F'));
   });
 
+  it('keeps room for a self-loop and its label on the side it is drawn on only', () => {
+    const at = (svg: string, id: string): [number, number] => {
+      const m = svg.match(new RegExp(`data-id="${id}" transform="translate\\(([-\\d.]+),([-\\d.]+)\\)`))!;
+      return [Number(m[1]), Number(m[2])];
+    };
+    const label = (svg: string): number[] => {
+      const m = svg.match(/class="pele-edge-label" data-id="L_B_B_0"><rect x="([-\d.]+)" y="([-\d.]+)" width="([-\d.]+)" height="([-\d.]+)"/)!;
+      return m.slice(1).map(Number);
+    };
+    for (const [dir, across] of [
+      ['LR', 1],
+      ['TD', 0],
+    ] as const) {
+      const loop = render(`flowchart ${dir}\n  A --> B\n  B -- "one<br>two<br>three<br>four<br>five<br>six" --> B\n  B --> C`, options);
+      const plain = render(`flowchart ${dir}\n  A --> B\n  B --> C`, options);
+      // Nothing is drawn before the nodes, so they keep their place.
+      for (const id of ['A', 'B', 'C']) expect(at(loop.svg, id)[across], `${dir} ${id}`).toBeCloseTo(at(plain.svg, id)[across], 5);
+      // The label lies past the node, inside the drawing.
+      const [x, y, w, h] = label(loop.svg);
+      expect(across === 1 ? y : x, dir).toBeGreaterThan(at(loop.svg, 'B')[across]);
+      expect(across === 1 ? y + h : x + w, dir).toBeLessThanOrEqual(across === 1 ? loop.height : loop.width);
+    }
+  });
+
   it('keeps invisible links out of the drawing but in the layout', () => {
     const linked = render('flowchart LR\n  A ~~~ B', options);
     const apart = render('flowchart LR\n  A\n  B', options);

@@ -45,6 +45,9 @@ export interface LNode {
   key: number;
   // How much of the side that edges meet may be shared out between them; 0 keeps them all at its middle.
   span: number;
+  // Room across the flow past the node's far side, kept clear of its neighbours but not part of the
+  // side its edges meet: x stays where they meet it.
+  after: number;
   x: number;
   y: number;
   rank: number;
@@ -99,7 +102,7 @@ export interface LayeredResult {
 }
 
 export function lnode(w: number, h: number, kind: Kind = Kind.Node): LNode {
-  return { w, h, kind, pin: 0, hint: NaN, key: NaN, span: 0, x: 0, y: 0, rank: 0 };
+  return { w, h, kind, pin: 0, hint: NaN, key: NaN, span: 0, after: 0, x: 0, y: 0, rank: 0 };
 }
 
 export function ledge(tail: number, head: number, minlen = 1, labelW = 0, labelH = 0): LEdge {
@@ -248,7 +251,7 @@ export function layered(nodes: LNode[], edges: LEdge[], opt: LayeredOptions): La
     node.rank = 0;
     node.x = node.w / 2;
     node.y = node.h / 2;
-    return { width: node.w, height: node.h };
+    return { width: node.w + node.after, height: node.h };
   }
 
   // Every edge gets a middle rank of its own when labels or parallel edges need the room.
@@ -291,6 +294,7 @@ export function layered(nodes: LNode[], edges: LEdge[], opt: LayeredOptions): La
 
   const n = real + dummies;
   const W = new Float64Array(n);
+  const A = new Float64Array(n);
   const H = new Float64Array(n);
   const KIND = new Uint8Array(n);
   const RANK = new Int32Array(n);
@@ -298,6 +302,7 @@ export function layered(nodes: LNode[], edges: LEdge[], opt: LayeredOptions): La
   for (let i = 0; i < real; i++) {
     const node = nodes[i];
     W[i] = node.w;
+    A[i] = node.after;
     H[i] = node.h;
     KIND[i] = node.kind;
     RANK[i] = node.rank;
@@ -502,7 +507,7 @@ export function layered(nodes: LNode[], edges: LEdge[], opt: LayeredOptions): La
   };
   setPositions();
 
-  const g: Graph = { n, real, maxRank, W, KIND, RANK, EF, ET, EFD, ETD, succStart, succE, predStart, predE, layerStart, order, pos, offsets, fixed, GRP, groupParent: opt.groups?.parent };
+  const g: Graph = { n, real, maxRank, W, A, KIND, RANK, EF, ET, EFD, ETD, succStart, succE, predStart, predE, layerStart, order, pos, offsets, fixed, GRP, groupParent: opt.groups?.parent };
 
   let crossings = 0;
   let declared = 0;
@@ -681,7 +686,7 @@ export function layered(nodes: LNode[], edges: LEdge[], opt: LayeredOptions): La
   for (let i = 0; i < n; i++) {
     const half = W[i] / 2;
     if (xs[i] - half < minX) minX = xs[i] - half;
-    if (xs[i] + half > maxX) maxX = xs[i] + half;
+    if (xs[i] + half + A[i] > maxX) maxX = xs[i] + half + A[i];
   }
   // Where edges spread along their nodes, a rank whose nodes only send edges on stands on one
   // line, and a rank whose nodes only receive them hangs from one, so that the edges of nodes of
@@ -780,6 +785,8 @@ interface Graph {
   real: number;
   maxRank: number;
   W: Float64Array;
+  // Room past the far side of each node; see `LNode.after`.
+  A: Float64Array;
   KIND: Uint8Array;
   RANK: Int32Array;
   // Segment endpoints, and where each segment attaches on them.
@@ -1069,7 +1076,7 @@ export function ease(across: number, along: number): number {
 // line with the nearest point above or below that is held in place.
 function alignLabels(g: Graph, nodes: LNode[], xs: Float64Array, free: [Int32Array, Int32Array], opt: LayeredOptions, empty: Uint8Array | undefined): void {
   const sep = opt.edgeSep;
-  const { n, real, maxRank, KIND, RANK, W, EF, ET, EFD, ETD, succStart, succE, predStart, predE, layerStart, order, pos } = g;
+  const { n, real, maxRank, KIND, RANK, W, A, EF, ET, EFD, ETD, succStart, succE, predStart, predE, layerStart, order, pos } = g;
   const placed = (v: number): boolean => KIND[v] === Kind.Label || (KIND[v] === Kind.Dummy && !(empty !== undefined && empty[RANK[v]] === 1));
   // Where segment `e` ends on the way up (side 0) or down, and how many ends share that side of
   // the node there: none for a point that is not on a node.
@@ -1084,7 +1091,10 @@ function alignLabels(g: Graph, nodes: LNode[], xs: Float64Array, free: [Int32Arr
     const s = layerStart[RANK[v]];
     const i = s + pos[v];
     const clear = (other: number): number => W[other] / 2 + W[v] / 2 + (KIND[other] === Kind.Node ? opt.nodeSep / 2 + sep / 2 : KIND[other] === KIND[v] ? sep : sep / 2);
-    return [i > s ? xs[order[i - 1]] + clear(order[i - 1]) : -Infinity, i + 1 < layerStart[RANK[v] + 1] ? xs[order[i + 1]] - clear(order[i + 1]) : Infinity];
+    return [
+      i > s ? xs[order[i - 1]] + clear(order[i - 1]) + A[order[i - 1]] : -Infinity,
+      i + 1 < layerStart[RANK[v] + 1] ? xs[order[i + 1]] - clear(order[i + 1]) - A[v] : Infinity,
+    ];
   };
   // The place between `lo` and `hi` that is in line with one of two ends, or else nearest the first choice.
   const choose = (x: number, up: [number, number], down: [number, number], lo: number, hi: number): number => {
@@ -1241,7 +1251,7 @@ function settle(g: Graph, nodes: LNode[], xs: Float64Array, EFK: Uint8Array, ETK
 // flow along with everything it is in line with already, where the nodes beside them leave room.
 // What is in line stays in line, so each move leaves one more edge straight.
 function snap(g: Graph, xs: Float64Array, empty: Uint8Array | undefined, opt: LayeredOptions): void {
-  const { n, KIND, RANK, EF, ET, EFD, ETD, layerStart, order, pos } = g;
+  const { n, A, KIND, RANK, EF, ET, EFD, ETD, layerStart, order, pos } = g;
   const passed = (u: number): boolean => empty !== undefined && KIND[u] === Kind.Dummy && empty[RANK[u]] === 1;
   // Each edge from one point that is held in place to the next, past the bends in ranks that hold nothing else.
   const a: number[] = [];
@@ -1290,8 +1300,8 @@ function snap(g: Graph, xs: Float64Array, empty: Uint8Array | undefined, opt: La
       const s = layerStart[RANK[v]];
       const end = layerStart[RANK[v] + 1];
       const i = s + pos[v];
-      if (i > s && block[order[i - 1]] !== id && xs[v] + shift - xs[order[i - 1]] < gap(v) + gap(order[i - 1]) - 0.01) return false;
-      if (i + 1 < end && block[order[i + 1]] !== id && xs[order[i + 1]] - xs[v] - shift < gap(v) + gap(order[i + 1]) - 0.01) return false;
+      if (i > s && block[order[i - 1]] !== id && xs[v] + shift - xs[order[i - 1]] < gap(v) + gap(order[i - 1]) + A[order[i - 1]] - 0.01) return false;
+      if (i + 1 < end && block[order[i + 1]] !== id && xs[order[i + 1]] - xs[v] - shift < gap(v) + gap(order[i + 1]) + A[v] - 0.01) return false;
     }
     return true;
   };
@@ -2030,7 +2040,7 @@ function halfRoom(g: Graph, opt: LayeredOptions, v: number): number {
 
 // Brandes-Köpf horizontal coordinate assignment: four aligned layouts, balanced.
 function position(g: Graph, opt: LayeredOptions): Float64Array {
-  const { n, maxRank, W, KIND, EF, ET, EFD, ETD, succStart, succE, predStart, predE, layerStart, order, pos } = g;
+  const { n, maxRank, W, A, KIND, EF, ET, EFD, ETD, succStart, succE, predStart, predE, layerStart, order, pos } = g;
   const segments = EF.length;
   const gap = new Float64Array(n);
   for (let i = 0; i < n; i++) gap[i] = halfRoom(g, opt, i);
@@ -2142,7 +2152,7 @@ function position(g: Graph, opt: LayeredOptions): Float64Array {
       for (let i = s + 1; i < end; i++) {
         const a = right ? order[i] : order[i - 1];
         const b = right ? order[i - 1] : order[i];
-        const sep = gap[a] + gap[b];
+        const sep = gap[a] + gap[b] + A[order[i - 1]];
         eFrom[blockEdges] = root[a];
         eTo[blockEdges] = root[b];
         eW[blockEdges] = right ? sep - shift[a] + shift[b] : sep + shift[a] - shift[b];
@@ -2192,7 +2202,7 @@ function position(g: Graph, opt: LayeredOptions): Float64Array {
     for (let i = 0; i < n; i++) {
       const half = W[i] / 2;
       if (xs[i] - half < lo) lo = xs[i] - half;
-      if (xs[i] + half > hi) hi = xs[i] + half;
+      if (xs[i] + half + A[i] > hi) hi = xs[i] + half + A[i];
     }
     mins.push(lo);
     maxs.push(hi);

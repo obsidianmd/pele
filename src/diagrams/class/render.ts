@@ -269,7 +269,10 @@ function draw(db: ClassDb, config: Config, options: RenderOptions, turned: boole
     const endW = cardWidth(edge.endLabelLeft);
     if (edge.source === edge.target) {
       views[edge.source].loops++;
-      cnodes[edge.source].w += 2 * (LOOP + (label.width > 0 ? label.width + 12 : 0));
+      // The loop is on the right. Across a downward flow, room is kept past that side only.
+      const room = LOOP + (label.width > 0 ? label.width + 12 : 0);
+      if (rootDir === 'TB' || rootDir === 'BT') cnodes[edge.source].after += room;
+      else cnodes[edge.source].w += 2 * room;
     } else {
       meet(edge.source, 0, startW);
       meet(edge.target, 2, endW);

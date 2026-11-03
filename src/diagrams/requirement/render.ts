@@ -229,9 +229,8 @@ function draw(model: RequirementModel, _config: Config, options: RenderOptions, 
     if (src === undefined || dst === undefined) continue;
     const label = layoutLabel(`«${edge.type}»`, false, measurer, small, 4000);
     if (src === dst) {
-      // A self-loop sits beside the node, across the flow, and the node's box grows to hold it.
-      if (sideways) cnodes[src].h += 2 * (LOOP + label.height + 8);
-      else cnodes[src].w += 2 * (LOOP + label.width + 12);
+      // A self-loop sits beside the node, across the flow, with room kept for it past that side.
+      cnodes[src].after += LOOP + (sideways ? label.height + 8 : label.width + 12);
     }
     drawn.push(edge);
     edgeLabels.push(label);
