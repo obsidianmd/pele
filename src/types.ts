@@ -21,6 +21,9 @@ export interface RenderOptions {
   monospace?: readonly MonospacePart[];
   fontSize?: number;
   idPrefix?: string;
+  // Where the colors a page does not set come from: always the light ones (the default), or the
+  // light or dark ones the system asks for. Needs a browser with light-dark().
+  colorScheme?: 'light' | 'auto';
   responsive?: boolean;
   // The width the host has for the diagram, in pixels. A type that can draw itself narrower
   // does, so that its text is not shrunk with it.

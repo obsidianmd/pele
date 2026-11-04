@@ -1,7 +1,7 @@
 import type { RenderOptions } from '../types.js';
 import { esc, escText } from './builder.js';
 import { paletteStyle } from './palette.js';
-import { RADIUS, ROOT_STYLE, fontStyle } from './theme.js';
+import { RADIUS, fontStyle, rootStyle } from './theme.js';
 
 // The weights of bold text, each set only in a diagram that has such text.
 const WEIGHTS = [
@@ -48,7 +48,7 @@ export function svgDocument(
     if (used.has(alias)) weights += `;--_${alias}:var(--pele-${name}-weight,bold)`;
   }
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" class="pele pele-${type}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" style="${fit}${ROOT_STYLE}${weights}${esc(fontStyle(fontSize, options.fontFamily, options.fontFamilyMono))}${paletteStyle()}" fill="var(--_fg)" role="graphics-document document" aria-roledescription="${type}"${aria}>` +
+    `<svg xmlns="http://www.w3.org/2000/svg" class="pele pele-${type}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" style="${fit}${rootStyle(options.colorScheme === 'auto')}${weights}${esc(fontStyle(fontSize, options.fontFamily, options.fontFamilyMono))}${paletteStyle()}" fill="var(--_fg)" role="graphics-document document" aria-roledescription="${type}"${aria}>` +
     head +
     content +
     '</svg>'
