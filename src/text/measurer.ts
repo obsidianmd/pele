@@ -38,6 +38,18 @@ function isWide(c: number): boolean {
   );
 }
 
+// Emoji blocks and the high halves of astral emoji. Color emoji fonts
+// draw these about 1.29em wide, while the Arial table below gives BMP
+// symbols 0.58em and astral emoji 1em via isWide.
+function isEmoji(c: number): boolean {
+  return (
+    (c >= 0x2300 && c <= 0x23ff) ||
+    (c >= 0x2600 && c <= 0x27bf) ||
+    (c >= 0x2b00 && c <= 0x2bff) ||
+    (c >= 0xd83c && c <= 0xd83e)
+  );
+}
+
 function isZeroWidth(c: number): boolean {
   return (
     c === 0xad ||
@@ -61,6 +73,7 @@ export const metricsMeasurer: TextMeasurer = {
       if (c < 32) continue;
       if (c < 127) units += mono ? 600 : table[c - 32];
       else if (isZeroWidth(c)) continue;
+      else if (isEmoji(c)) units += mono ? 1200 : 1290;
       else if (isWide(c)) units += mono ? 1200 : 1000;
       else units += mono ? 600 : 580;
     }
