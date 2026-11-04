@@ -113,6 +113,7 @@ All options are optional.
 | `fontSize` | `number` | Base font size in pixels. Defaults to `16`. |
 | `idPrefix` | `string` | Prefixes IDs in the SVG, including the accessibility title and description IDs. Use a unique prefix containing only letters, digits, `-` and `_` for each diagram on a page to avoid shared IDs. `mount()` gives each diagram its own prefix by default. |
 | `responsive` | `boolean` | Allows the SVG to shrink to fit its container. Defaults to `true`. Set `false` for a fixed pixel size. |
+| `colorScheme` | `'light' \| 'auto'` | Where the colors you do not set with `--pele-*` come from. `'light'` (default) always uses the light colors. `'auto'` follows the system light or dark setting, and needs a browser with `light-dark()` (Chrome 123, Safari 17.5, Firefox 120 or later). With `'auto'`, set all the colors you override, or the rest follow the system. |
 | `maxWidth` | `number` | Available width in pixels. See [Narrow screens](#narrow-screens). |
 | `autoDirection` | `boolean` | Allows supported diagrams to switch to a vertical layout. Defaults to `true`. |
 | `directionBreakpoint` | `number` | Width threshold in pixels for `autoDirection`. Defaults to `640`. |
