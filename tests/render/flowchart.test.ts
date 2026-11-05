@@ -370,6 +370,17 @@ describe('flowchart rendering', () => {
     }
   });
 
+  it('ends an edge to an enclosing subgraph on the subgraph border', () => {
+    const { svg } = render('flowchart TD\n  subgraph Subgraph\n    Node1\n    Node2\n    Node3\n    Node1 --> Subgraph\n  end', options);
+    const boxes = [...svg.matchAll(/<rect x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)" height="([\d.]+)"/g)].map((m) => m.slice(1).map(Number));
+    const [x, y, w, h] = boxes.sort((a, b) => b[2] * b[3] - a[2] * a[3])[0];
+    const [tx, ty] = [...svg.matchAll(/class="pele-marker" d="M([-\d.]+),([-\d.]+)L/g)].map((m) => [Number(m[1]), Number(m[2])])[0];
+    // The tip sits on the border, not at the center where it hid behind a node.
+    const onBorder = Math.abs(tx - x) < 0.5 || Math.abs(tx - (x + w)) < 0.5 || Math.abs(ty - y) < 0.5 || Math.abs(ty - (y + h)) < 0.5;
+    expect(onBorder).toBe(true);
+    expect(Math.hypot(tx - (x + w / 2), ty - (y + h / 2))).toBeGreaterThan(20);
+  });
+
   it('routes a stepped flowchart at right angles, clear of its nodes', () => {
     const source = '---\nconfig:\n  flowchart:\n    curve: step\n---\nflowchart TD\n  A[Start] --> B[Parse]\n  A --> C[Measure]\n  A --> D[Theme]\n  B --> E[Fits]\n  C --> E\n  D --> E\n  E -->|Yes| F[Draw]\n  E -->|No| A';
     const { svg } = render(source, options);

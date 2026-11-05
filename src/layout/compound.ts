@@ -413,6 +413,22 @@ function opposite(side: Side): Side {
   return ((side + 2) & 3) as Side;
 }
 
+// The point where the line from one box's center to another's leaves the first box. When the
+// other center is inside the box, the point is on the nearest side instead.
+function border(from: CNode, to: CNode): [number, number] {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const hw = Math.max(from.w / 2, 0.5);
+  const hh = Math.max(from.h / 2, 0.5);
+  if (Math.abs(dx) < hw && Math.abs(dy) < hh) {
+    const toSide = hw - Math.abs(dx);
+    const toEnd = hh - Math.abs(dy);
+    return toSide < toEnd ? [from.x + (dx < 0 ? -hw : hw), to.y] : [to.x, from.y + (dy < 0 ? -hh : hh)];
+  }
+  const scale = Math.min(dx !== 0 ? hw / Math.abs(dx) : Infinity, dy !== 0 ? hh / Math.abs(dy) : Infinity);
+  return [from.x + dx * scale, from.y + dy * scale];
+}
+
 // Lays out a graph whose nodes may be nested in groups. Each group is laid out on its own,
 // in its own direction, and then placed in its parent as a single box. An edge that crosses
 // a group's border passes through a port on the side facing its other end.
@@ -925,13 +941,19 @@ export function compoundLayout(nodes: CNode[], edges: CEdge[], rootDir: Dir, opt
     }
   }
 
+  // A stray edge runs between a node and a group that encloses it, so it goes straight from
+  // one border to the other instead of to the group's center, where it would end up behind
+  // a node or in blank space.
   for (const ei of stray) {
     const e = edges[ei];
     const a = nodes[e.src];
     const b = nodes[e.dst];
-    e.route = [a.x, a.y, 0, b.x, b.y, 0];
-    e.labelX = (a.x + b.x) / 2;
-    e.labelY = (a.y + b.y) / 2;
+    const [ax, ay] = border(a, b);
+    const [bx, by] = border(b, a);
+    const flat = Math.abs(bx - ax) > Math.abs(by - ay) ? 1 : 0;
+    e.route = [ax, ay, flat, bx, by, flat];
+    e.labelX = (ax + bx) / 2;
+    e.labelY = (ay + by) / 2;
   }
   for (const ei of loops) {
     const e = edges[ei];
