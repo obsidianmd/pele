@@ -46,11 +46,6 @@ function randomGraph(seed: number): { nodes: CNode[]; edges: CEdge[]; dir: Dir }
   return { nodes, edges, dir: DIRS[int(4)] };
 }
 
-function isAncestor(nodes: CNode[], a: number, b: number): boolean {
-  for (let p = nodes[b].parent; p >= 0; p = nodes[p].parent) if (p === a) return true;
-  return false;
-}
-
 function onBorder(node: CNode, x: number, y: number): boolean {
   const dx = Math.abs(x - node.x);
   const dy = Math.abs(y - node.y);
@@ -95,7 +90,6 @@ describe('compound layout', () => {
         expect(e.route.length % 3, `${where} edge ${i}`).toBe(0);
         expect(e.route.length, `${where} edge ${i} has a route`).toBeGreaterThanOrEqual(6);
         for (const value of e.route) expect(Number.isFinite(value), `${where} edge ${i}`).toBe(true);
-        if (isAncestor(nodes, e.src, e.dst) || isAncestor(nodes, e.dst, e.src)) return;
         const last = e.route.length - 3;
         expect(onBorder(nodes[e.src], e.route[0], e.route[1]), `${where} edge ${i} starts on its source`).toBe(true);
         expect(onBorder(nodes[e.dst], e.route[last], e.route[last + 1]), `${where} edge ${i} ends on its target`).toBe(true);
