@@ -49,6 +49,7 @@ const drawingIn = (shown: number) => {
   const listening = new Map<string, number>();
   const handlers = new Map<string, ((event: unknown) => void)[]>();
   const attributes: Record<string, string> = { width: '1200', height: '300' };
+  const captured: number[] = [];
   const svg = {
     localName: 'svg',
     style: {},
@@ -70,10 +71,12 @@ const drawingIn = (shown: number) => {
       handlers.set(type, [...(handlers.get(type) ?? []), handler]);
     },
     removeEventListener: (type: string) => count(type, -1),
+    setPointerCapture: (id: number) => captured.push(id),
   };
   return {
     element: element as unknown as HTMLElement,
     svg,
+    captured,
     listening: (type: string) => listening.get(type) ?? 0,
     fire: (type: string, event: unknown) => handlers.get(type)?.forEach((handler) => handler(event)),
     show: (width: number) => {
@@ -264,5 +267,34 @@ describe('zoom', () => {
     shrunk.fire('pointerup', { pointerId: 2 });
     tap(shrunk, link);
     expect(click(shrunk, link).defaultPrevented).toBe(false);
+  });
+
+  it('lets a click on a link work while zoomed, and still captures a drag', () => {
+    const shrunk = drawingIn(400);
+    const zoom = enableZoom(shrunk.element, { controls: false });
+    const link = {};
+    zoom.zoomTo(1);
+
+    // A plain click never captures the pointer, so the click still reaches the link.
+    shrunk.fire('pointerdown', { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 100, clientY: 50 });
+    expect(shrunk.captured).toEqual([]);
+    shrunk.fire('pointerup', { pointerId: 1 });
+    expect(click(shrunk, link).defaultPrevented).toBe(false);
+
+    // A small move is not a drag yet, so still no capture.
+    shrunk.fire('pointerdown', { pointerId: 2, pointerType: 'mouse', button: 0, clientX: 100, clientY: 50 });
+    shrunk.fire('pointermove', { pointerId: 2, clientX: 102, clientY: 50 });
+    expect(shrunk.captured).toEqual([]);
+    // Past the drag threshold the pointer is captured, and the click it ends is stopped.
+    shrunk.fire('pointermove', { pointerId: 2, clientX: 130, clientY: 50 });
+    expect(shrunk.captured).toEqual([2]);
+    shrunk.fire('pointerup', { pointerId: 2 });
+    expect(click(shrunk, link).defaultPrevented).toBe(true);
+
+    // A pinch still captures on the second pointer down.
+    shrunk.fire('pointerdown', { pointerId: 3, pointerType: 'touch', clientX: 100, clientY: 50 });
+    expect(shrunk.captured).toEqual([2]);
+    shrunk.fire('pointerdown', { pointerId: 4, pointerType: 'touch', clientX: 140, clientY: 50 });
+    expect(shrunk.captured).toEqual([2, 4]);
   });
 });
