@@ -120,6 +120,20 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
   const buttons: Partial<Record<keyof typeof ICONS, HTMLButtonElement>> = {};
   let positioned = false;
 
+  // A button that disables or hides itself while it has focus drops the focus to the
+  // page, so the next Tab starts again from the top. Keep it inside the drawing.
+  const keepFocus = (): void => {
+    const lost = [buttons.zoomIn, buttons.zoomOut, buttons.reset].find(
+      (button) => button !== undefined && view().document?.activeElement === button && (button.disabled || button.style.display === 'none'),
+    );
+    if (!lost) return;
+    const next = [buttons.zoomIn, buttons.zoomOut, buttons.reset].find(
+      (button) => button !== undefined && button !== lost && !button.disabled && button.style.display !== 'none',
+    );
+    if (next) next.focus();
+    else svg?.focus?.();
+  };
+
   const offer = (): void => {
     if (options.controls === false) return;
     const can = zoomable();
@@ -161,6 +175,7 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
     dim(buttons.zoomIn, (scale || fit()) >= most() * 0.999);
     dim(buttons.zoomOut, scale === 0);
     if (buttons.reset) buttons.reset.style.display = scale === 0 ? 'none' : 'grid';
+    keepFocus();
   };
   const ours = (event: Event): boolean => bar !== undefined && event.target instanceof view().Node && bar.contains(event.target as Node);
 

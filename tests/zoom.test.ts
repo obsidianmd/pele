@@ -265,4 +265,57 @@ describe('zoom', () => {
     tap(shrunk, link);
     expect(click(shrunk, link).defaultPrevented).toBe(false);
   });
+
+  it('keeps the focus inside the drawing when a zoom button disables or hides itself', () => {
+    class Button {
+      style: Record<string, string> = {};
+      listeners = new Map<string, () => void>();
+      children: Button[] = [];
+      disabled = false;
+      setAttribute() {}
+      getBoundingClientRect() {
+        return { left: 0, right: 0, top: 0, bottom: 0 };
+      }
+      addEventListener(type: string, listener: () => void) {
+        this.listeners.set(type, listener);
+      }
+      append(child: Button) {
+        this.children.push(child);
+      }
+      remove() {}
+      focus() {
+        (globals.document as { activeElement: unknown }).activeElement = this;
+      }
+    }
+    const doc = { activeElement: null as unknown };
+    globals.document = doc;
+    try {
+      const shrunk = drawingIn(400);
+      let bar = new Button();
+      Object.assign(shrunk.element, { ownerDocument: { createElement: () => new Button() }, append: (child: Button) => (bar = child) });
+      const zoom = enableZoom(shrunk.element);
+      const [zoomIn, zoomOut, reset] = bar.children;
+
+      // Zooming to the maximum disables Zoom in while it has focus.
+      zoomIn.focus();
+      zoom.zoomTo(3);
+      expect(zoomIn.disabled).toBe(true);
+      expect(doc.activeElement).toBe(zoomOut);
+
+      // Zooming back out disables Zoom out while it has focus.
+      zoomOut.focus();
+      zoom.reset();
+      expect(zoomOut.disabled).toBe(true);
+      expect(doc.activeElement).toBe(zoomIn);
+
+      // Reset hides itself while it has focus.
+      zoom.zoomTo(1);
+      reset.focus();
+      zoom.reset();
+      expect(reset.style.display).toBe('none');
+      expect(doc.activeElement).toBe(zoomIn);
+    } finally {
+      delete globals.document;
+    }
+  });
 });
