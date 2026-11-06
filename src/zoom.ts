@@ -325,8 +325,9 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
     if (!zoomable() || ours(event) || (event.pointerType === 'mouse' && event.button !== 0)) return;
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     travelled = 0;
-    if (pointers.size === 2) pinch = spread().distance;
-    if (pointers.size === 2 || scale !== 0) {
+    if (pointers.size === 2) {
+      pinch = spread().distance;
+      // A pinch is never a click, so its pointer can be captured at once.
       element.setPointerCapture?.(event.pointerId);
       if (svg) svg.style.cursor = 'grabbing';
     }
@@ -347,7 +348,13 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (scale === 0) return;
     travelled += Math.abs(event.clientX - last.x) + Math.abs(event.clientY - last.y);
-    if (travelled > 4) dragged = true;
+    if (travelled > 4 && !dragged) {
+      // Capture only once the press turns into a drag. Capturing on pointerdown retargets
+      // the click that follows a plain tap, so a link in the drawing never receives it.
+      dragged = true;
+      element.setPointerCapture?.(event.pointerId);
+      if (svg) svg.style.cursor = 'grabbing';
+    }
     move(event.clientX - last.x, event.clientY - last.y);
   };
 
