@@ -86,6 +86,19 @@ describe('flowchart rendering', () => {
     assertWellFormed(svg);
   });
 
+  it('strikes through <s>, <del> and <strike> text', () => {
+    // #123: the three strikethrough tags were dropped and their text drawn plain.
+    const { svg } = render('flowchart LR\n  A["<s>old</s> new"]\n  B["<u>under</u> and <del>gone</del>"]\n  C["<strike>out</strike>"]', options);
+    expect(svg).toMatch(/<tspan[^>]* text-decoration="line-through">old<\/tspan>/);
+    expect(svg).toContain('<tspan text-decoration="line-through">gone</tspan>');
+    expect(svg).toMatch(/<tspan[^>]* text-decoration="line-through">out<\/tspan>/);
+    expect(svg).toMatch(/<tspan[^>]* text-decoration="underline">under<\/tspan>/);
+    const both = render('flowchart LR\n  A["<u><s>both</s></u>"]', options).svg;
+    expect(both).toMatch(/<tspan[^>]* text-decoration="underline line-through">both<\/tspan>/);
+    expect(render('kanban\n  todo[Todo]\n    t1[<s>card</s>]', options).svg).toMatch(/text-decoration="line-through"[^>]*>card</);
+    assertWellFormed(svg);
+  });
+
   it('styles other inline tags as browsers do', () => {
     const styles: [string, string][] = [
       ['cite', 'font-style="italic"'],
