@@ -147,6 +147,29 @@ describe('flowchart rendering', () => {
     expect(svg).toContain('<tspan font-style="italic">Markdown</tspan>');
   });
 
+  it('keeps a markdown marker with no closer as text', () => {
+    // Mermaid (marked) leaves these literal. An opener used to be accepted whenever the same
+    // character came later on the line, so the marker vanished and the rest went italic.
+    for (const label of ['_private_var', 'a *b * c']) {
+      const { svg } = render(`flowchart LR\n  A["\`${label}\`"]`, options);
+      expect(svg, label).toContain(label);
+      expect(svg, label).not.toContain('font-style="italic"');
+    }
+  });
+
+  it('pairs a closer with the nearest markdown opener before it', () => {
+    const { svg } = render('flowchart LR\n  A["`_id and _name_`"]', options);
+    expect(svg).toContain('_id and ');
+    expect(svg).toContain('<tspan font-style="italic">name</tspan>');
+  });
+
+  it('writes an escaped markdown marker literally', () => {
+    const { svg } = render('flowchart LR\n  A["`\\*not\\*`"]', options);
+    expect(svg).toContain('*not*');
+    expect(svg).not.toContain('\\');
+    expect(svg).not.toContain('font-style="italic"');
+  });
+
   it('draws <code> spans in labels with the monospace font', () => {
     const { svg } = render('flowchart TD\n  A["Call <code>render()</code> once"]', options);
     expect(svg).toMatch(/<tspan[^>]* font-family="var\(--_fm\)">render\(\)<\/tspan>/);

@@ -163,6 +163,39 @@ interface Open {
   shifts: number[];
 }
 
+// Markdown characters a backslash writes literally, as marked does for these labels.
+const ESCAPABLE = new Set(['*', '_', '\\']);
+
+// The emphasis marker run at i: one or two of the same character, and whether it can open or close.
+// `_` inside a word does neither.
+function marker(source: string, i: number): { len: number; opens: boolean; closes: boolean } {
+  const ch = source[i];
+  const len = source[i + 1] === ch ? 2 : 1;
+  const prev = i > 0 ? source[i - 1] : ' ';
+  const next = i + len < source.length ? source[i + len] : ' ';
+  const wordy = ch === '_' && /\w/.test(prev) && /\w/.test(next);
+  return { len, opens: !wordy && next.trim() !== '', closes: !wordy && prev.trim() !== '' };
+}
+
+// Whether the opener at i has a closer of its kind later on the line. A closer pairs with the
+// nearest opener before it, so another opener of the kind on the way claims it first.
+function hasCloser(source: string, i: number, len: number): boolean {
+  const ch = source[i];
+  for (let j = i + len; j < source.length; ) {
+    if (source[j] === '\\' && ESCAPABLE.has(source[j + 1])) {
+      j += 2;
+    } else if (source[j] !== ch) {
+      j++;
+    } else {
+      const run = marker(source, j);
+      if (run.len === len && run.closes) return true;
+      if (run.len === len && run.opens) return false;
+      j += run.len;
+    }
+  }
+  return false;
+}
+
 // Splits inline HTML and, for markdown labels, emphasis markers into styled spans.
 function inline(line: Span[], source: string, markdown: boolean, base: number, open: Open): void {
   let style = open.style;
@@ -200,23 +233,26 @@ function inline(line: Span[], source: string, markdown: boolean, base: number, o
           continue;
         }
       }
+    } else if (markdown && ch === '\\' && ESCAPABLE.has(source[i + 1])) {
+      text += source[i + 1];
+      i += 2;
+      continue;
     } else if (markdown && (ch === '*' || ch === '_')) {
-      const double = source[i + 1] === ch;
-      const bit = double ? Style.Bold : Style.Italic;
-      const len = double ? 2 : 1;
+      const run = marker(source, i);
+      const bit = run.len === 2 ? Style.Bold : Style.Italic;
       const open = (marked & bit) === 0;
-      const prev = i > 0 ? source[i - 1] : ' ';
-      const next = i + len < n ? source[i + len] : ' ';
-      const canOpen = open && next.trim() !== '' && source.indexOf(double ? ch + ch : ch, i + len) !== -1;
-      const canClose = !open && prev.trim() !== '';
-      const wordy = ch === '_' && /\w/.test(prev) && /\w/.test(next);
-      if ((canOpen || canClose) && !wordy) {
+      const canOpen = open && run.opens && hasCloser(source, i, run.len);
+      const canClose = !open && run.closes;
+      if (canOpen || canClose) {
         flush();
         marked = canOpen ? marked | bit : marked & ~bit;
         style = canOpen ? style | bit : (style & ~bit) | (base & bit);
-        i += len;
-        continue;
+      } else {
+        // The whole run is text, so the second `*` of a stray `**` cannot close an italic.
+        text += source.slice(i, i + run.len);
       }
+      i += run.len;
+      continue;
     }
     text += ch;
     i++;
