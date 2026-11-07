@@ -94,7 +94,7 @@ function textBlock(label: Label, x: number, y: number, attrs: string, icons: Ico
   for (let i = 0; i < label.lines.length; i++) {
     const line = label.lines[i];
     const cy = y + lineMiddle(label, i);
-    if (line.length === 1 && line[0].icon === undefined && line[0].math === undefined && (line[0].style & (Style.Sub | Style.Sup | Style.Underline)) === 0) {
+    if (line.length === 1 && line[0].icon === undefined && line[0].math === undefined && (line[0].style & (Style.Sub | Style.Sup | Style.Underline | Style.Strike)) === 0) {
       out += `<text${textStyle(attrs, line[0].style)} x="${num(x)}" y="${num(cy + label.size * 0.35)}"${end ? ' text-anchor="end"' : ''}>${esc(
         line[0].text
       )}</text>`;

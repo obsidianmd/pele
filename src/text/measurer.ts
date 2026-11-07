@@ -7,6 +7,7 @@ export const enum Style {
   Sub = 8,
   Sup = 16,
   Underline = 32,
+  Strike = 64,
 }
 
 // Approximate divisor for CSS font-size="smaller".
