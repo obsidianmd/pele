@@ -86,6 +86,15 @@ describe('label ink', () => {
     }
   });
 
+  it('reads a var() fallback', () => {
+    expect(inkFor('fill:var(--pele-series-6,#eeca3b)')).toBe(ON_LIGHT);
+    expect(inkFor('fill:var(--pele-accent,#5b7bd5)')).toBe(ON_LIGHT);
+    expect(inkFor('fill:var(--pele-critical,#e45756)')).toBe(ON_LIGHT);
+    expect(inkFor('fill:var(--x,var(--y,#fff))')).toBe(ON_LIGHT);
+    expect(inkFor('fill:var(--x,red)')).toBe(ON_LIGHT);
+    expect(inkFor('fill:var(--x,url(a))')).toBeUndefined();
+  });
+
   it('leaves labels alone on fills it cannot read', () => {
     for (const fill of ['var(--x)', 'currentColor', 'none', 'transparent', 'blu', '#ggg', '#12345', 'rgb(1,2)', 'rgb(1, 2 3)', 'rgb(1 2 3 / 4 / 5)', 'rgb(1, 2, 3 / 1)', 'rgb(1 2 3 4)', 'hsl(10%, 50%, 50%)', 'rgb(10deg, 2, 3)', 'rgb(0%,0,0)', 'hsl(0,0,0)', 'rgb(0. 0 0)', 'rgb(none,0,0)']) {
       expect(inkFor(`fill:${fill}`), fill).toBeUndefined();

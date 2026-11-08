@@ -124,6 +124,12 @@ describe('gantt rendering', () => {
     expect(svg).toMatch(/fill="var\(--_bg\)" x="[\d.]+" y="[\d.]+" text-anchor="middle">Short</);
   });
 
+  it('draws a critical inside-bar label dark, and a plain one light', () => {
+    const { svg } = render('gantt\n dateFormat YYYY-MM-DD\n Critical task :crit, c, 2024-01-01, 30d\n Plain task :p, 2024-01-01, 30d', options);
+    expect(svg).toMatch(/fill="var\(--pele-fg-on-light,#1f1f1f\)" x="[\d.]+" y="[\d.]+" text-anchor="middle">Critical task/);
+    expect(svg).toMatch(/fill="var\(--_bg\)" x="[\d.]+" y="[\d.]+" text-anchor="middle">Plain task/);
+  });
+
   it('grows to fit a label that sticks out past the right edge', () => {
     const long = 'A label that is much longer than anything the plot leaves room for on either side of the bar, so the chart has to grow';
     const { svg, width } = render(`gantt\n dateFormat YYYY-MM-DD\n ${long} :a, 2024-01-01, 1d\n B :b, 2024-01-01, 2d`, options);

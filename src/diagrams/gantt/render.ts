@@ -1,5 +1,6 @@
 import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num } from '../../svg/builder.js';
+import { inkFill } from '../../svg/ink.js';
 import { svgDocument } from '../../svg/root.js';
 import { CRITICAL, ROUNDED, resolveStyle } from '../../svg/theme.js';
 import { layoutLabel, type Label } from '../../text/label.js';
@@ -326,7 +327,9 @@ export function renderGantt(model: GanttDb, config: Config, options: RenderOptio
       } else {
         shape = `<rect x="${num(bar.x0)}" y="${num(cy - barHeight / 2)}" width="${num(bar.x1 - bar.x0)}" height="${num(barHeight)}" ${paint} ${stroke}${ROUNDED}/>`;
       }
-      if (bar.inside) textFill = state === '' ? ' fill="var(--_bg)"' : '';
+      // The label sits on the bar, so its ink comes from the bar's fill; the accent token has
+      // no fallback to read, so a plain bar keeps the page-background ink.
+      if (bar.inside) textFill = state === '' ? inkFill(resolveStyle([`fill:${color}`])) || ' fill="var(--_bg)"' : '';
       else if (state === 'done') textFill = ' fill="var(--_m)"';
     }
 
