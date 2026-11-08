@@ -12,6 +12,7 @@ export const ON_DARK = 'var(--pele-fg-on-dark,#fff)';
 const RE_FILL = /[";]fill:([^;"]*)/;
 const RE_OPACITIES = /[";](?:fill-)?opacity:([^;"]*)/g;
 const RE_HEX = /^#(?:[\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i;
+const RE_VAR_FALLBACK = /^var\(\s*--[\w-]+\s*,\s*(.+)\)$/;
 const RE_FUNCTION = /^(rgba?|hsla?)\(([^()]*)\)$/i;
 const RE_NUMBER = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?(%|deg|grad|rad|turn)?$/i;
 
@@ -55,6 +56,10 @@ function color(raw: string): [number, number] | undefined {
   const name = value.replace('grey', 'gray');
   if (DARK.has(name)) return [0, 1];
   if (LIGHT.has(name)) return [1, 1];
+  // A var() with a concrete fallback decides on the fallback: it is the color that renders
+  // when the page leaves the token alone. A var() without one stays unknown.
+  const fallback = RE_VAR_FALLBACK.exec(value);
+  if (fallback) return color(fallback[1]);
   if (RE_HEX.test(value)) {
     const digits = value.length < 6 ? value.slice(1).replace(/./g, '$&$&') : value.slice(1);
     const n = (i: number): number => parseInt(digits.slice(2 * i, 2 * i + 2), 16) / 255;
