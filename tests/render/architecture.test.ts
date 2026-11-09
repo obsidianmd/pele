@@ -35,6 +35,23 @@ function clusterBoxes(svg: string): Map<string, Box> {
 const inside = (a: Box, b: Box): boolean => a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h;
 const apart = (a: Box, b: Box): boolean => a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
 
+// Whether an edge's orthogonal path crosses a node's icon square. Paths are polylines, so each
+// run is checked against the box; a run is axis-aligned, and anything else only counts when an
+// end lands inside the box.
+function pathCrosses(svg: string, edgeId: string, box: Box): boolean {
+  const d = new RegExp(`class="pele-edge" data-id="${edgeId}"><path d="([^"]*)"`).exec(svg)?.[1];
+  if (d === undefined) return false;
+  const nums = [...d.matchAll(/-?[\d.]+/g)].map((m) => Number(m[0]));
+  const inBox = (x: number, y: number): boolean => x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h;
+  for (let i = 0; i + 3 < nums.length; i += 2) {
+    const [x1, y1, x2, y2] = [nums[i], nums[i + 1], nums[i + 2], nums[i + 3]];
+    if (inBox(x1, y1) || inBox(x2, y2)) return true;
+    if (x1 === x2 && x1 >= box.x && x1 <= box.x + box.w && Math.max(y1, y2) >= box.y && Math.min(y1, y2) <= box.y + box.h) return true;
+    if (y1 === y2 && y1 >= box.y && y1 <= box.y + box.h && Math.max(x1, x2) >= box.x && Math.min(x1, x2) <= box.x + box.w) return true;
+  }
+  return false;
+}
+
 function layout(body: string): Map<string, Box> {
   return nodeBoxes(render('architecture-beta\n' + body, options).svg);
 }
@@ -314,5 +331,44 @@ describe('architecture rendering', () => {
     const { svg } = render('architecture-beta\ngroup g[Nothing here]\ngroup h in g', options);
     const clusters = clusterBoxes(svg);
     expect(inside(clusters.get('h')!, clusters.get('g')!)).toBe(true);
+  });
+
+  it('keeps an unconnected service off the edge between two others (#138)', () => {
+    const src =
+      'architecture-beta\n' +
+      'group app(cloud)[Playground]\n' +
+      'service page(server)[Web page] in app\n' +
+      'service Item1(server)[New item] in app\n' +
+      'service store(disk)[localStorage]\n' +
+      'service api(internet)[Claude API]\n' +
+      'page:R -- L:api\n' +
+      'page:B -- T:store';
+    const { svg } = render(src, options);
+    const nodes = nodeBoxes(svg);
+    const item = nodes.get('Item1')!;
+    expect(pathCrosses(svg, 'page-api', item)).toBe(false);
+    expect(pathCrosses(svg, 'page-store', item)).toBe(false);
+    for (const id of ['page', 'store', 'api']) expect(apart(item, nodes.get(id)!)).toBe(true);
+  });
+
+  it('moves an unconnected service off a vertical edge leaving its group (#138)', () => {
+    const src =
+      'architecture-beta\n' +
+      'group g\n' +
+      'service a in g\n' +
+      'service b in g\n' +
+      'service d in g\n' +
+      'service u in g\n' +
+      'service c\n' +
+      'a:R -- L:b\n' +
+      'b:R -- L:d\n' +
+      'a:B -- T:c';
+    const { svg } = render(src, options);
+    const nodes = nodeBoxes(svg);
+    const u = nodes.get('u')!;
+    expect(pathCrosses(svg, 'a-b', u)).toBe(false);
+    expect(pathCrosses(svg, 'b-d', u)).toBe(false);
+    expect(pathCrosses(svg, 'a-c', u)).toBe(false);
+    for (const id of ['a', 'b', 'd', 'c']) expect(apart(u, nodes.get(id)!)).toBe(true);
   });
 });
