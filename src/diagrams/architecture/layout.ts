@@ -115,6 +115,40 @@ export function placeOnGrid(nodes: ArchNode[], groups: ArchGroup[], edges: ArchE
     }
   }
 
+  // An edge with exactly one end inside a container leaves that container along the side its
+  // inside end names, so the edge runs straight out of the container from that end's cell. The
+  // cells on that ray are the edge's lane: no other part may sit on it, or the edge is drawn
+  // straight through that part's nodes. Lanes are recorded per container, for the end inside it.
+  // Duplicate edges share a lane, and the containers an edge crosses are the ones on its ends'
+  // chains above their common container, so this stays linear in the depth of the nesting.
+  const lanes: { node: number; side: number }[][] = Array.from({ length: G + 1 }, () => []);
+  const laneSeen = new Set<number>();
+  const common = (a: number, b: number): number => {
+    let ca = parent[a];
+    let cb = parent[b];
+    while (ca !== cb) {
+      if (depth[ca] >= depth[cb]) ca = parent[N + ca];
+      else cb = parent[N + cb];
+    }
+    return ca;
+  };
+  const addLane = (c: number, node: number, side: number): void => {
+    const key = (c * N + node) * 4 + side;
+    if (laneSeen.has(key)) return;
+    laneSeen.add(key);
+    lanes[c].push({ node, side });
+  };
+  for (const edge of edges) {
+    const a = nodeIndex.get(edge.lhsId);
+    const b = nodeIndex.get(edge.rhsId);
+    if (a === undefined || b === undefined) continue;
+    const sa = sideIndex(edge.lhsDir);
+    const sb = sideIndex(edge.rhsDir);
+    const cc = common(a, b);
+    for (let c = parent[a]; c !== cc; c = parent[N + c]) addLane(c, a, sa);
+    for (let c = parent[b]; c !== cc; c = parent[N + c]) addLane(c, b, sb);
+  }
+
   // Position of each item in its container, and its size in cells.
   const x = new Int32Array(N + G);
   const y = new Int32Array(N + G);
@@ -292,6 +326,10 @@ export function placeOnGrid(nodes: ArchNode[], groups: ArchGroup[], edges: ArchE
     starts.push(order.length);
 
     // Unconnected parts go side by side, wrapping into rows that keep the whole roughly square.
+    // A part must also stay clear of the lanes of edges that leave this container: an edge runs
+    // straight out of its end's side, so a part sitting on that ray has the edge drawn through
+    // it, and a part whose own edge leaves towards a placed part crosses that part the same way.
+    // The shelf spot is tried first, so a diagram with no lane in the way lays out as before.
     const count = starts.length - 1;
     const minX = new Array<number>(count);
     const minY = new Array<number>(count);
@@ -319,27 +357,132 @@ export function placeOnGrid(nodes: ArchNode[], groups: ArchGroup[], edges: ArchE
       widest = Math.max(widest, partW[p]);
     }
     const limit = Math.max(widest, Math.ceil(Math.sqrt(area * 2)));
+    // Which part each item of this container belongs to.
+    const partOf = new Map<number, number>();
+    for (let p = 0; p < count; p++) for (let i = starts[p]; i < starts[p + 1]; i++) partOf.set(order[i], p);
+    // Each lane of an edge leaving this container: the child holding its end, the end's cell
+    // relative to that child, and the part the child belongs to. Inner layouts have run, so the
+    // relative cells are final; only the child's own position moves as parts are placed.
+    const laneInfo: { child: number; col: number; row: number; side: number; part: number }[] = [];
+    for (const lane of lanes[c]) {
+      let col = 0;
+      let row = 0;
+      let cur = lane.node;
+      while (parent[cur] !== c) {
+        col += x[cur];
+        row += y[cur];
+        cur = N + parent[cur];
+      }
+      laneInfo.push({ child: cur, col, row, side: lane.side, part: partOf.get(cur)! });
+    }
+    // Whether the ray leaving (col, row) along `side` meets the cell range [x0, x1) x [y0, y1).
+    const rayHits = (col: number, row: number, side: number, x0: number, y0: number, x1: number, y1: number): boolean =>
+      side === 1 ? row >= y0 && row < y1 && x1 > col
+      : side === 0 ? row >= y0 && row < y1 && x0 < col
+      : side === 3 ? col >= x0 && col < x1 && y1 > row
+      : col >= x0 && col < x1 && y0 < row;
+    // Cells already taken by placed parts, as whole item rectangles.
+    const occupied = new Set<number>();
+    const cellKey = (col: number, row: number): number => (col + OFFSET) * SPAN + row + OFFSET;
     let cx = 0;
     let cy = 0;
     let shelf = 0;
     let width = 0;
+    let height = 0;
+    let bottom = -1;
     for (let p = 0; p < count; p++) {
       if (cx > 0 && cx + partW[p] > limit) {
         cy += shelf;
         cx = 0;
         shelf = 0;
       }
-      for (let i = starts[p]; i < starts[p + 1]; i++) {
-        x[order[i]] += cx - minX[p];
-        y[order[i]] += cy - minY[p];
+      const valid = (sx: number, sy: number): boolean => {
+        const ox = sx - minX[p];
+        const oy = sy - minY[p];
+        for (let i = starts[p]; i < starts[p + 1]; i++) {
+          const item = order[i];
+          for (let r = y[item] + oy; r < y[item] + oy + h[item]; r++) {
+            for (let cc = x[item] + ox; cc < x[item] + ox + w[item]; cc++) if (occupied.has(cellKey(cc, r))) return false;
+          }
+        }
+        for (const lane of laneInfo) {
+          // The end's cell: its child is already placed, unless it is this part, in which case
+          // the candidate shift still has to be added.
+          const col = x[lane.child] + lane.col + (lane.part === p ? ox : 0);
+          const row = y[lane.child] + lane.row + (lane.part === p ? oy : 0);
+          if (lane.part < p) {
+            // A placed part's edge must not run through this part.
+            for (let i = starts[p]; i < starts[p + 1]; i++) {
+              const item = order[i];
+              if (rayHits(col, row, lane.side, x[item] + ox, y[item] + oy, x[item] + ox + w[item], y[item] + oy + h[item])) {
+                return false;
+              }
+            }
+          } else if (lane.part === p) {
+            // This part's own edge must not run through a placed part.
+            for (const cell of occupied) {
+              const cc = Math.floor(cell / SPAN) - OFFSET;
+              const rr = cell - (cc + OFFSET) * SPAN - OFFSET;
+              if (
+                lane.side === 1 ? rr === row && cc > col
+                : lane.side === 0 ? rr === row && cc < col
+                : lane.side === 3 ? cc === col && rr > row
+                : cc === col && rr < row
+              ) {
+                return false;
+              }
+            }
+          }
+        }
+        return true;
+      };
+      let sx = cx;
+      let sy = cy;
+      if (!valid(sx, sy)) {
+        // Search row by row for the nearest clear spot, starting over at the left of each row.
+        // Rows below everything placed so far are fresh: there a part can always slide sideways
+        // past the finitely many lanes, so the search ends. The guard keeps a bug from hanging
+        // the render; it falls back to the shelf spot.
+        let done = false;
+        let guard = 0;
+        for (let r = cy; !done && guard < 100000; r++) {
+          const fresh = r > bottom;
+          const maxSx = fresh ? 100000 : Math.max(0, limit - partW[p]);
+          for (let s = 0; s <= maxSx && !done && guard < 100000; s++, guard++) {
+            if (valid(s, r)) {
+              sx = s;
+              sy = r;
+              done = true;
+            }
+          }
+        }
+        if (!done) {
+          sx = cx;
+          sy = cy;
+        }
       }
-      cx += partW[p];
-      shelf = Math.max(shelf, partH[p]);
-      width = Math.max(width, cx);
+      for (let i = starts[p]; i < starts[p + 1]; i++) {
+        const item = order[i];
+        x[item] += sx - minX[p];
+        y[item] += sy - minY[p];
+        for (let r = y[item]; r < y[item] + h[item]; r++) {
+          for (let cc = x[item]; cc < x[item] + w[item]; cc++) occupied.add(cellKey(cc, r));
+        }
+      }
+      if (sy > cy) {
+        cy = sy;
+        shelf = partH[p];
+      } else {
+        shelf = Math.max(shelf, partH[p]);
+      }
+      cx = sx + partW[p];
+      width = Math.max(width, sx + partW[p]);
+      height = Math.max(height, sy + partH[p]);
+      bottom = Math.max(bottom, sy + partH[p] - 1);
     }
     if (c < G) {
       w[N + c] = width;
-      h[N + c] = cy + shelf;
+      h[N + c] = height;
     }
   };
   for (let c = G - 1; c >= 0; c--) layout(c);
