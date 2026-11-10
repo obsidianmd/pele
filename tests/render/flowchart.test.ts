@@ -402,6 +402,66 @@ describe('flowchart rendering', () => {
     expect(x('F')).toBeLessThan(x('E'));
   });
 
+  // Sample an SVG path (M, C and L commands only) into a polyline.
+  function samplePath(d: string): [number, number][] {
+    const tokens = d.match(/[MLC]|-?\d+(?:\.\d+)?/g) ?? [];
+    const points: [number, number][] = [];
+    let x = 0;
+    let y = 0;
+    let i = 0;
+    while (i < tokens.length) {
+      const cmd = tokens[i++];
+      if (cmd === 'M' || cmd === 'L') {
+        x = Number(tokens[i++]);
+        y = Number(tokens[i++]);
+        points.push([x, y]);
+      } else if (cmd === 'C') {
+        const [x1, y1, x2, y2, x3, y3] = [0, 1, 2, 3, 4, 5].map((k) => Number(tokens[i + k]));
+        i += 6;
+        for (let s = 1; s <= 16; s++) {
+          const t = s / 16;
+          const u = 1 - t;
+          points.push([
+            u * u * u * x + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3,
+            u * u * u * y + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3,
+          ]);
+        }
+        x = x3;
+        y = y3;
+      }
+    }
+    return points;
+  }
+
+  // Whether two edge paths cross each other (a proper crossing, not a shared end).
+  function pathsCross(a: string, b: string): boolean {
+    const pa = samplePath(a);
+    const pb = samplePath(b);
+    const side = (p: [number, number], q: [number, number], r: [number, number]): number =>
+      Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+    for (let i = 0; i + 1 < pa.length; i++) {
+      for (let j = 0; j + 1 < pb.length; j++) {
+        const [p1, p2] = [pa[i], pa[i + 1]];
+        const [q1, q2] = [pb[j], pb[j + 1]];
+        if (side(p1, p2, q1) * side(p1, p2, q2) < 0 && side(q1, q2, p1) * side(q1, q2, p2) < 0) return true;
+      }
+    }
+    return false;
+  }
+
+  it('draws no crossing between A --> C and B --> D whatever the order the connections are written in', () => {
+    // obsidianmd/pele #110: swapping only the B --> C and B --> D lines changed
+    // a crossing-free drawing into one where A --> C crosses B --> D.
+    const first = 'flowchart TD\n  A --> B\n  A --> C\n  A --> E\n  B --> C\n  B --> D\n  C -->|x| E\n  D -->|y| E';
+    const second = 'flowchart TD\n  A --> B\n  A --> C\n  A --> E\n  B --> D\n  B --> C\n  C -->|x| E\n  D -->|y| E';
+    for (const source of [first, second]) {
+      const { svg } = render(source, options);
+      const ac = svg.match(/data-id="L_A_C_0"><path d="([^"]+)"/)![1];
+      const bd = svg.match(/data-id="L_B_D_0"><path d="([^"]+)"/)![1];
+      expect(pathsCross(ac, bd), source).toBe(false);
+    }
+  });
+
   it('brings a lone edge to the tip of a diamond, and not to wherever it would run straight', () => {
     const { svg } = render('flowchart TD\n  A[A node wide enough to reach over the diamond] --> B[Left]\n  A --> C{Decide}\n  B --> D[End]\n  C --> D', options);
     const tipX = Number(svg.match(/data-id="C" transform="translate\(([-\d.]+),/)![1]);

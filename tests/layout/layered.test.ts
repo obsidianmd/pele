@@ -36,4 +36,36 @@ describe('layered', () => {
       }
     }
   });
+
+  it('finds a crossing-free order whatever the order the connections are written in', () => {
+    // obsidianmd/pele #110: swapping only the B --> C and B --> D lines must not
+    // leave a crossing between A --> C and B --> D. Nodes are in first-mention
+    // order (A, B, C, E, D), sized like the issue's single-letter nodes, and the
+    // two labelled edges force the middle ranks the sweeps have to work through.
+    // The first order starts with a crossing; the sweeps alone cannot remove it,
+    // because no single rank's reorder helps on its own.
+    const run = (swap: boolean): number => {
+      const nodes = Array.from({ length: 5 }, () => lnode(44, 48));
+      const bc = ledge(1, 2);
+      const bd = ledge(1, 4);
+      const edges = [
+        ledge(0, 1),
+        ledge(0, 2),
+        ledge(0, 3),
+        ...(swap ? [bd, bc] : [bc, bd]),
+        ledge(2, 3, 1, 10, 16),
+        ledge(4, 3, 1, 10, 16),
+      ];
+      const { crossings } = layered(nodes, edges, {
+        nodeSep: 40,
+        edgeSep: 16,
+        rankSep: 48,
+        portSep: 20,
+        orderOnly: true,
+      });
+      return crossings;
+    };
+    expect(run(false)).toBe(0);
+    expect(run(true)).toBe(0);
+  });
 });
