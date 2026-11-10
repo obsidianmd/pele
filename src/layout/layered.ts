@@ -1968,19 +1968,55 @@ function reduceCrossings(g: Graph, nodes: LNode[]): [number, number] {
   // often end with as few crossings either way but a different order, and then the one that
   // keeps more of the nodes in the order they were given is the less surprising.
   // Only for graphs small enough to be read node by node: a second run costs as much as the first.
+  // When crossings remain, two more runs try other starts. The third starts from the mirror of
+  // the initial order: a mirror crosses as often, but the sweeps settle barycenter ties the
+  // other way. The fourth perturbs the best order found so far, swapping the first adjacent
+  // pair of real nodes in every rank that has one: one swap on its own need not help, but the
+  // sweeps that follow can settle the neighbouring ranks around it, which escapes a local
+  // minimum that neither the sweeps nor the mirror can leave.
   const initial = order.slice();
+  const mirror = initial.slice();
+  for (let r = 0; r <= maxRank; r++) mirror.subarray(layerStart[r], layerStart[r + 1]).reverse();
   const small = n <= 600;
   let chosen = bestOrder;
   let chosenOut = Infinity;
-  for (let attempt = 0; attempt < (small ? 2 : 1); attempt++) {
+  let attempts = small ? 2 : 1;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    let startOrder = initial;
+    if (attempt === 2) {
+      startOrder = mirror;
+    } else if (attempt === 3) {
+      startOrder = chosen.slice();
+      let changed = false;
+      for (let r = 0; r <= maxRank; r++) {
+        if (fixed[r]) continue;
+        const s = layerStart[r];
+        const e = layerStart[r + 1];
+        for (let i = s; i + 1 < e; i++) {
+          const a = startOrder[i];
+          const b = startOrder[i + 1];
+          if (a >= real || b >= real) continue;
+          if (nodes[a].pin !== 0 || nodes[b].pin !== 0) continue;
+          if (GRP && GRP[a] !== GRP[b]) continue;
+          startOrder[i] = b;
+          startOrder[i + 1] = a;
+          changed = true;
+          break;
+        }
+      }
+      if (!changed) continue;
+    }
     if (attempt > 0) {
-      order.set(initial);
+      order.set(startOrder);
       settlePositions();
     }
     let found = start;
-    const foundOrder = initial.slice();
+    const foundOrder = startOrder.slice();
+    // The perturbation attempt starts going down: an up sweep first would undo the swap
+    // before the neighbouring ranks can settle around it.
+    const parity = attempt + (attempt === 3 ? 1 : 0);
     for (let i = 0, stale = 0; stale < 4 && i < MAX_SWEEPS; i++, stale++) {
-      sweep((i + attempt) % 2 === 0, i % 4 >= 2);
+      sweep((i + parity) % 2 === 0, i % 4 >= 2);
       const c = count();
       if (c < found) {
         found = c;
@@ -2005,6 +2041,8 @@ function reduceCrossings(g: Graph, nodes: LNode[]): [number, number] {
       chosen = foundOrder;
       chosenOut = out;
     }
+    if (attempt === 1 && small && best > 0) attempts = 3;
+    if (attempt === 2 && small && best > 0) attempts = 4;
   }
   order.set(chosen);
   settlePositions();
