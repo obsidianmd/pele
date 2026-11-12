@@ -72,7 +72,7 @@ function draw(db: FlowDb, config: Config, options: RenderOptions, variant: FlowV
   const size = options.fontSize ?? 16;
   const edgeSize = Math.round(size * 0.875);
   const measurer = options.measurer ?? defaultMeasurer(options.fontFamily, options.fontFamilyMono);
-  const wrapWidth = Math.min(numberOption(flow, 'wrappingWidth', 200), variant && tight ? 100 : Infinity);
+  const wrapWidth = Math.min(numberOption(flow, 'wrappingWidth', 200), tight ? 100 : Infinity);
   const pad = options.padding ?? 8;
   const icons = options.icons;
 
@@ -91,7 +91,7 @@ function draw(db: FlowDb, config: Config, options: RenderOptions, variant: FlowV
     let view: NodeView;
     let c: CNode;
     if (node.isGroup) {
-      const label = layoutLabel(node.label, markdown, measurer, fontSize, variant && tight ? Math.max(80, titleRoom(options) / 2) : 4000, textStyle);
+      const label = layoutLabel(node.label, markdown, measurer, fontSize, tight ? Math.max(80, titleRoom(options) / 2) : 4000, textStyle);
       view = { node, style, label, shape: 'group', w: 0, h: 0, dy: 0, loops: 0 };
       c = cnode(0, 0);
       c.isGroup = true;
