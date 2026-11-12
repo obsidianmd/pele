@@ -182,6 +182,32 @@ describe('the maxWidth option', () => {
     expect(closer.svg.match(/class="pele-node/g)?.length).toBe(natural.svg.match(/class="pele-node/g)?.length);
   });
 
+  it('narrows a flowchart that runs down, wrapping its labels and subgraph titles', () => {
+    const down =
+      'flowchart TD\n  A[Agent writes the page] --> B[Browser draws the widgets and the page]\n  A --> C[Agent fixes the markup and tries again]';
+    const natural = render(down, options);
+    expect(natural.width).toBeGreaterThan(342);
+    const narrow = render(down, { ...options, maxWidth: 342 });
+    expect(narrow.width).toBeLessThanOrEqual(342);
+    expect(narrow.svg.match(/class="pele-node/g)?.length).toBe(natural.svg.match(/class="pele-node/g)?.length);
+    assertInert(narrow.svg, 'flowchart');
+    // A long subgraph title wraps instead of holding the diagram wide.
+    const grouped =
+      'flowchart TD\n  subgraph S[The operations that prepare and validate every incoming request]\n    A --> B\n  end';
+    expect(render(grouped, options).width).toBeGreaterThan(342);
+    const groupedNarrow = render(grouped, { ...options, maxWidth: 342 });
+    expect(groupedNarrow.width).toBeLessThanOrEqual(342);
+    expect(groupedNarrow.svg).toContain('operations');
+    expect(groupedNarrow.svg).toContain('request');
+    // The same source written across stays across once its labels wrap narrow enough to fit.
+    const across = down.replace('flowchart TD', 'flowchart LR');
+    const sideways = render(across, { ...options, maxWidth: 342 });
+    expect(sideways.width).toBeLessThanOrEqual(342);
+    expect(sideways.height).toBeGreaterThan(render(across, options).height);
+    const x = (id: string): number => Number(new RegExp(`data-id="${id}" transform="translate\\(([\\d.]+),`).exec(sideways.svg)![1]);
+    expect(x('A')).toBeLessThan(x('B'));
+  });
+
   it('ignores a width that is not a positive number, and survives a tiny one', { timeout: 120000 }, () => {
     for (const { name, sources } of corpora) {
       const source = sources[0];
