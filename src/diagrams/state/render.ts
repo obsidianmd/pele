@@ -10,7 +10,7 @@ import { classNames, resolveStyle, setsFill, type ResolvedStyle } from '../../sv
 import { decodeEntities } from '../../text/entities.js';
 import { layoutLabel, type Label } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
-import { linked, safeUrl } from '../../util/url.js';
+import { internalLink, linked, relAttr, safeUrl } from '../../util/url.js';
 import type { LinkInfo, RenderOptions, Rendered } from '../../types.js';
 import { runsAcross, turnToFit } from '../common/fit-width.js';
 import type { StateDb } from './db.js';
@@ -473,6 +473,18 @@ function draw(db: StateDb, config: Config, options: RenderOptions, turned: boole
     const h = view.h;
     const ink = inkFill(style);
     const labelAttrs = ` class="pele-label"${ink}${style.text}`;
+    const classes = classNames(node.cssClasses.replace(MERMAID_CLASSES, ''));
+    // As in the flowchart, a state carrying the internal-link class links its name label
+    // to the note of that name; without the anchor the class only styles the text.
+    const internal = / internal-link(?: |$)/.test(classes + ' ');
+    const linkLabel = (label: string): string => {
+      if (!internal || !node.label || options.links === false) return label;
+      const name = decodeEntities(node.label);
+      const safe = internalLink(name, options);
+      const target = esc(name);
+      links.push({ id: node.id, href: name, internal: true });
+      return `<a class="internal-link"${safe ? ` href="${target}"${relAttr(options)}` : ''} data-href="${target}">${label}</a>`;
+    };
     let body: string;
 
     switch (view.kind) {
@@ -522,11 +534,11 @@ function draw(db: StateDb, config: Config, options: RenderOptions, turned: boole
       default: {
         body = rect(-w / 2, -h / 2, w, h, ` rx="${num(Math.min(CORNER, h / 2))}"${SURFACE}${style.shape}`);
         if (view.kind === K.State) {
-          body += labelSvg(view.label, 0, 0, labelAttrs, icons);
+          body += linkLabel(labelSvg(view.label, 0, 0, labelAttrs, icons));
           break;
         }
         let at = PAD_Y - h / 2 + view.label.height;
-        body += `<path d="M${num(-w / 2)},${num(at + 6)}H${num(w / 2)}"${RULE}${style.line}/>` + labelSvg(view.label, 0, at - view.label.height / 2, labelAttrs, icons);
+        body += `<path d="M${num(-w / 2)},${num(at + 6)}H${num(w / 2)}"${RULE}${style.line}/>` + linkLabel(labelSvg(view.label, 0, at - view.label.height / 2, labelAttrs, icons));
         at += 14;
         for (const line of view.lines) {
           body += labelSvg(line, 0, at + line.height / 2, ` class="pele-state-description" font-size="${small}"${ink}${style.text}`, icons);
@@ -542,7 +554,7 @@ function draw(db: StateDb, config: Config, options: RenderOptions, turned: boole
       if (tooltip) body = `<title>${esc(tooltip)}</title>` + body;
       body = linked(body, safeUrl(unquote(link.url)), node.id, links, options, ' target="_blank"');
     }
-    const open = `<g class="${CLASSES[view.kind]}${classNames(node.cssClasses.replace(MERMAID_CLASSES, ''))}" data-id="${escText(node.id)}"`;
+    const open = `<g class="${CLASSES[view.kind]}${classes}" data-id="${escText(node.id)}"`;
     if (view.kind === K.Composite) clusters += `${open}>${body}</g>`;
     else if (view.kind === K.Note) notesOut += `${open} transform="translate(${num(x)},${num(y)})">${body}</g>`;
     else nodesOut += `${open} transform="translate(${num(x)},${num(y)})">${body}</g>`;

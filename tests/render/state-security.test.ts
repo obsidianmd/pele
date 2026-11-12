@@ -111,6 +111,12 @@ describe('inert state diagram output', () => {
     }
   });
 
+  it('never gives an unsafe href to an internal link', () => {
+    const { svg } = render('stateDiagram-v2\n state "javascript:alert(1)" as a\n a --> b\n class a internal-link;', options);
+    expect(svg).toContain('<a class="internal-link" data-href="javascript:alert(1)">');
+    expect(svg).not.toContain(' href="javascript:');
+  });
+
   it('does not pollute prototypes', () => {
     render('stateDiagram-v2\n  __proto__ --> constructor\n  constructor --> toString\n  class __proto__ constructor\n  classDef constructor fill:red', options);
     render('stateDiagram-v2\n  state __proto__ {\n  hasOwnProperty --> valueOf\n  }\n  note right of __proto__ : x\n  style __proto__ fill:red', options);

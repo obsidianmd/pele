@@ -364,6 +364,22 @@ describe('state diagram rendering', () => {
     ]);
   });
 
+  it('turns internal-link states into Obsidian links', () => {
+    const result = render(
+      'stateDiagram-v2\n state "Test Link" as S1\n [*] --> S1\n class S1 internal-link;',
+      options
+    );
+    expect(result.svg).toContain('<a class="internal-link" href="Test Link" rel="noopener" data-href="Test Link">');
+    expect(result.links).toEqual([{ id: 'S1', href: 'Test Link', internal: true }]);
+    // A described state's title links, while its description lines stay plain text.
+    const described = render(
+      'stateDiagram-v2\n state "My note" as a\n a : A description\n a --> b\n class a internal-link;',
+      options
+    );
+    expect(described.svg).toContain('<a class="internal-link" href="My note" rel="noopener" data-href="My note">');
+    expect(described.links).toEqual([{ id: 'a', href: 'My note', internal: true }]);
+  });
+
   it('writes the accessible title and description', () => {
     const svg = draw('accTitle: The title\n accDescr: The description\n a --> b');
     expect(svg).toContain('<title id="pele-title">The title</title>');
