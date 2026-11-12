@@ -140,13 +140,15 @@ describe('every diagram type', () => {
       ['agentflow', 'agentflow-beta\n  A --> B\n  click A "URL"'],
       ['class', 'classDiagram\n  class A\n  click A href "URL"'],
       ['state', 'stateDiagram-v2\n  A --> B\n  click A href "URL"'],
+      ['state note', 'stateDiagram-v2\n state "URL" as A\n A --> B\n class A internal-link'],
       ['gantt', 'gantt\n  dateFormat YYYY-MM-DD\n  Task :a, 2024-01-01, 1d\n  click a href "URL"'],
       ['c4', 'C4Context\n  Person(a, "A", $link="URL")'],
     ];
     for (const [name, template] of links) {
       for (const hidden of ['#106;avascript:alert(1)', '&#106;avascript:alert(1)', 'java#9;script:alert(1)', '#32;javascript:alert(1)']) {
         const { svg } = render(template.replace('URL', hidden), options);
-        const hrefs = (svg.match(/href="[^"]*"/g) ?? []).join(' ');
+        // The leading space keeps a note name in data-href out of the match.
+        const hrefs = (svg.match(/ href="[^"]*"/g) ?? []).join(' ');
         expect(hrefs, `${name}: ${hidden}`).not.toMatch(/href="[^"#]*script/i);
         assertInert(svg, `${name}: ${hidden}`);
       }
@@ -164,6 +166,7 @@ describe('every diagram type', () => {
     ['agentflow note', 'agentflow-beta\n  A["URL"]:::internal-link --> B'],
     ['class', 'classDiagram\n  class A\n  click A href "URL"'],
     ['state', 'stateDiagram-v2\n  A --> B\n  click A href "URL"'],
+    ['state note', 'stateDiagram-v2\n state "URL" as A\n A --> B\n class A internal-link'],
     ['gantt', 'gantt\n  dateFormat YYYY-MM-DD\n  Task :a, 2024-01-01, 1d\n  click a href "URL"'],
     ['kanban', "---\nconfig:\n  kanban:\n    ticketBaseUrl: 'URL'\n---\nkanban\n  todo\n    a[Card]@{ ticket: T1 }"],
     ['c4', 'C4Context\n  Person(a, "A", $link="URL")'],
