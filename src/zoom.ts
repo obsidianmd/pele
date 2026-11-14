@@ -119,6 +119,38 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
   let bar: HTMLElement | undefined;
   const buttons: Partial<Record<keyof typeof ICONS, HTMLButtonElement>> = {};
   let positioned = false;
+  // The bar's top within the element, from --pele-zoom-top, so the follow below can keep the
+  // same gap at the element's bottom.
+  let barTop = 8;
+
+  // While the drawing is enlarged, the buttons follow the page as it scrolls, so Reset stays
+  // one tap away on a drawing taller than the screen. The bar stays against the element: it
+  // drops by how far the element's top has scrolled past the viewport, and stops at the
+  // element's bottom.
+  const follow = (): void => {
+    if (!bar || scale === 0) return;
+    const at = element.getBoundingClientRect();
+    const last = Math.max(0, element.clientHeight - bar.getBoundingClientRect().height - 2 * barTop);
+    bar.style.marginTop = `${Math.min(Math.max(0, -at.top), last)}px`;
+  };
+
+  // A scroll listener that may fire often is only taken while the drawing is enlarged, and a
+  // capturing one also hears a scrollable ancestor, not just the page.
+  const onScroll = (): void => follow();
+  let following = false;
+  function followOn(on: boolean): void {
+    if (on === following) return;
+    following = on;
+    const win = view();
+    // Another window's answers can be late or absent; without a scroll listener the buttons
+    // simply stay at the top, as before.
+    if (typeof win.addEventListener !== 'function' || typeof win.removeEventListener !== 'function') return;
+    if (on) {
+      // Read once per enlargement; the page's --pele-zoom-top does not move mid-zoom.
+      if (bar) barTop = parseFloat(view().getComputedStyle(bar).top) || 8;
+      win.addEventListener('scroll', onScroll, true);
+    } else win.removeEventListener('scroll', onScroll, true);
+  }
 
   const offer = (): void => {
     if (options.controls === false) return;
@@ -161,6 +193,10 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
     dim(buttons.zoomIn, (scale || fit()) >= most() * 0.999);
     dim(buttons.zoomOut, scale === 0);
     if (buttons.reset) buttons.reset.style.display = scale === 0 ? 'none' : 'grid';
+    // While enlarged the buttons follow the page as it scrolls; at rest they sit at the top.
+    followOn(scale !== 0);
+    if (scale !== 0) follow();
+    else if (bar) bar.style.marginTop = '';
   };
   const ours = (event: Event): boolean => bar !== undefined && event.target instanceof view().Node && bar.contains(event.target as Node);
 
@@ -299,6 +335,7 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
     if (!svg) {
       bar?.remove();
       take(false);
+      followOn(false);
       return;
     }
     natural = { width: Number(svg.getAttribute('width')) || 0, height: Number(svg.getAttribute('height')) || 0 };

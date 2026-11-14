@@ -65,6 +65,7 @@ const drawingIn = (shown: number) => {
     clientWidth: shown,
     clientHeight: shown / 4,
     style: {},
+    getBoundingClientRect: () => ({ left: 0, top: 0, right: shown, bottom: shown / 4, width: shown, height: shown / 4 }),
     addEventListener: (type: string, handler: (event: unknown) => void) => {
       count(type, 1);
       handlers.set(type, [...(handlers.get(type) ?? []), handler]);
@@ -218,7 +219,7 @@ describe('zoom', () => {
       children: Node[] = [];
       setAttribute() {}
       getBoundingClientRect() {
-        return { left: 0, right: 0, top: 0, bottom: 0 };
+        return { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 };
       }
       addEventListener(type: string, listener: () => void) {
         this.listeners.set(type, listener);
@@ -264,5 +265,93 @@ describe('zoom', () => {
     shrunk.fire('pointerup', { pointerId: 2 });
     tap(shrunk, link);
     expect(click(shrunk, link).defaultPrevented).toBe(false);
+  });
+
+  it('keeps the zoom buttons in view while the drawing is enlarged', () => {
+    // A drawing 1200 by 300, shrunk into an element 400 wide and 2000 tall, as on a phone
+    // page where the drawing fills the screen.
+    let top = 0;
+    const barRect = { left: 362, right: 392, top: 8, bottom: 90, width: 30, height: 82 };
+    class Node {
+      style: Record<string, string> = {};
+      children: Node[] = [];
+      parentNode: unknown = null;
+      setAttribute() {}
+      getBoundingClientRect() {
+        return barRect;
+      }
+      addEventListener() {}
+      append(child: Node) {
+        this.children.push(child);
+        child.parentNode = this;
+      }
+      remove() {}
+      contains(other: unknown): boolean {
+        return other === this || this.children.some((child) => child.contains(other));
+      }
+    }
+    const scrolls: (() => void)[] = [];
+    const win = {
+      getComputedStyle: () => ({ position: 'relative', getPropertyValue: () => '0px' }),
+      addEventListener: (type: string, handler: () => void) => {
+        if (type === 'scroll') scrolls.push(handler);
+      },
+      removeEventListener: (type: string, handler: () => void) => {
+        if (type === 'scroll') scrolls.splice(scrolls.indexOf(handler), 1);
+      },
+    };
+    const svg = {
+      localName: 'svg',
+      style: {},
+      getAttribute: (name: string) => ({ width: '1200', height: '300' })[name] ?? null,
+      setAttribute: () => {},
+      removeAttribute: () => {},
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 100 }),
+      matches: () => false,
+      querySelectorAll: () => [],
+    };
+    let bar = new Node();
+    const element = {
+      firstElementChild: svg,
+      clientWidth: 400,
+      clientHeight: 2000,
+      style: {},
+      ownerDocument: { createElement: () => new Node(), defaultView: win },
+      append: (child: Node) => {
+        bar = child;
+        child.parentNode = element;
+      },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      getBoundingClientRect: () => ({ left: 0, top, right: 400, bottom: top + 2000, width: 400, height: 2000 }),
+    };
+    const zoom = enableZoom(element as unknown as HTMLElement);
+    expect(scrolls.length).toBe(0);
+    expect(bar.style.marginTop).toBe('');
+
+    zoom.zoomTo(1);
+    expect(zoom.scale).toBeGreaterThan(zoom.fit);
+    expect(scrolls.length).toBe(1);
+    expect(bar.style.marginTop).toBe('0px');
+
+    // The page scrolled 500px: the buttons drop 500px, staying at the top of the screen.
+    top = -500;
+    scrolls.forEach((fire) => fire());
+    expect(bar.style.marginTop).toBe('500px');
+
+    // Nearly scrolled past: they stop at the element's bottom, 8px up from its edge.
+    top = -1950;
+    scrolls.forEach((fire) => fire());
+    expect(bar.style.marginTop).toBe('1902px');
+
+    // Scrolled back: they sit at the top again.
+    top = 100;
+    scrolls.forEach((fire) => fire());
+    expect(bar.style.marginTop).toBe('0px');
+
+    zoom.reset();
+    expect(bar.style.marginTop).toBe('');
+    expect(scrolls.length).toBe(0);
+    zoom.destroy();
   });
 });
