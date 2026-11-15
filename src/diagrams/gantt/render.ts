@@ -5,7 +5,7 @@ import { CRITICAL, ROUNDED, resolveStyle } from '../../svg/theme.js';
 import { layoutLabel, type Label } from '../../text/label.js';
 import { Style, defaultMeasurer, type TextMeasurer } from '../../text/measurer.js';
 import type { LinkInfo, RenderOptions, Rendered } from '../../types.js';
-import { capWidth } from '../common/fit-width.js';
+import { capWidth, fillWidth } from '../common/fit-width.js';
 import { linked } from '../../util/url.js';
 import { autoTicks, intervalTicks, timeFormat } from './axis.js';
 import { add, addDays } from './dates.js';
@@ -147,7 +147,10 @@ export function renderGantt(model: GanttDb, config: Config, options: RenderOptio
 
   const left = pad + (setting(config, 'leftPadding', 0, 2000) ?? Math.max(sectionWidth > 0 ? sectionWidth + 24 : 0, sampleWidth / 2));
   const rightPadding = setting(config, 'rightPadding', 0, 2000) ?? Math.max(16, sampleWidth / 2);
-  const target = capWidth(options, setting(config, 'useWidth', 100, 20000) ?? WIDTH, 280);
+  // A Gantt plot can be any width, so without an explicit useWidth it fills the room the
+  // host has; an explicit width is the width asked for.
+  const useWidth = setting(config, 'useWidth', 100, 20000);
+  const target = useWidth === undefined ? fillWidth(options, WIDTH, 280) : capWidth(options, useWidth, 280);
   const plotWidth = Math.max(MIN_PLOT, target - left - rightPadding - pad);
   const right = left + plotWidth;
   const scale = stop > start ? plotWidth / (stop - start) : 0;

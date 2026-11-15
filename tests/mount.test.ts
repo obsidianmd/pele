@@ -157,6 +157,22 @@ describe('mount', () => {
     expect(mount(el, SANKEY, options).result.width).toBe(320);
   });
 
+  it('grows a gantt chart into the room the element has, and back', () => {
+    const GANTT = 'gantt\n  dateFormat YYYY-MM-DD\n  section Section\n  A task :a1, 2014-01-01, 30d\n  Another task :after a1, 20d';
+    const own = { ...options, idPrefix: 'own' };
+    expect(render(GANTT, own).width).toBe(800);
+    const el = element(1000);
+    const handle = mount(el, GANTT, own);
+    // The element has 980 pixels inside its padding, and a Gantt plot can be any width.
+    expect(handle.result.width).toBe(980);
+    expect(el.innerHTML).toBe(render(GANTT, { ...own, maxWidth: 980 }).svg);
+
+    resize(el, 420);
+    expect(handle.result.width).toBe(400);
+    resize(el, 1000);
+    expect(handle.result.width).toBe(980);
+  });
+
   it('draws once when the diagram cannot use the room differently', () => {
     const el = element(1000);
     let count = 0;

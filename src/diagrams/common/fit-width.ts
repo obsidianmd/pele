@@ -37,6 +37,15 @@ export function capWidth(options: RenderOptions, natural: number, least: number,
   return Math.max(Math.min(least, natural), Math.min(natural, available - around));
 }
 
+// For a chart whose plot can be any width: the width the host has when that is wider than
+// its own, its own when the host has less room than that, and never below `least`. A width
+// that is not a positive finite number is no width at all.
+export function fillWidth(options: RenderOptions, natural: number, least: number): number {
+  const available = options.maxWidth;
+  if (available !== undefined && Number.isFinite(available) && available > natural) return available;
+  return capWidth(options, natural, least);
+}
+
 const BREAKPOINT = 640;
 
 // For a diagram that can run across or down: draws it across, and down instead when the host

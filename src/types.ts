@@ -22,8 +22,9 @@ export interface RenderOptions {
   fontSize?: number;
   idPrefix?: string;
   responsive?: boolean;
-  // The width the host has for the diagram, in pixels. A type that can draw itself narrower
-  // does, so that its text is not shrunk with it.
+  // The width the host has for the diagram, in pixels. A type that can draw itself to that
+  // width does, so that its text is not shrunk with it; one whose plot can be any width
+  // grows into it too.
   maxWidth?: number;
   // Whether a diagram that runs across may be drawn running down when it does not fit
   // `maxWidth`, and the width under which that is done. On by default, under 640 pixels.
