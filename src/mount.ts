@@ -167,6 +167,15 @@ export function mountWith(engine: Engine, element: HTMLElement, text: string, op
       adapts ??= engine.render(model!, { ...base, maxWidth: 1 }).svg !== natural.svg;
       if (adapts) return engine.render(model!, { ...base, maxWidth: available });
     }
+    if (available > natural.width) {
+      // A diagram whose plot can be any width grows into the room the host has; one that
+      // only wraps or tightens at a width keeps its own.
+      adapts ??= engine.render(model!, { ...base, maxWidth: 1 }).svg !== natural.svg;
+      if (adapts) {
+        const grown = engine.render(model!, { ...base, maxWidth: available });
+        if (grown.width > natural.width) return grown;
+      }
+    }
     return natural;
   };
 

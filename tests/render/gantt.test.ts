@@ -191,6 +191,17 @@ describe('gantt rendering', () => {
     expect(two.match(/pele-section-0/g)!.length).toBe(2);
   });
 
+  it('fills the room the host has when that is wider than its own width', () => {
+    const wide = render(BASIC, { ...options, maxWidth: 1200 });
+    expect(wide.width).toBe(1200);
+    expect(bars(wide.svg).get('a1')!.width).toBeGreaterThan(bars(render(BASIC, options).svg).get('a1')!.width);
+    // An explicit useWidth is the width asked for, even with more room.
+    const fixed = render(`---\nconfig:\n  gantt:\n    useWidth: 1200\n---\n${BASIC}`, { ...options, maxWidth: 1600 });
+    expect(fixed.width).toBe(1200);
+    // Less room still shrinks it.
+    expect(render(BASIC, { ...options, maxWidth: 400 }).width).toBe(400);
+  });
+
   it('packs tasks that do not overlap onto one row in compact mode', () => {
     const src = 'gantt\n dateFormat YYYY-MM-DD\n section Section\n A :a1, 2014-01-01, 30d\n B :a2, 2014-01-20, 25d\n C :a3, 2014-02-10, 20d\n';
     const plain = render(src, options);
