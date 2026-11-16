@@ -5,16 +5,32 @@ import type { IconResolver, MathMarkup } from '../types.js';
 
 export type { IconResolver };
 
-const RE_NEEDS_ESC = /[&<>"\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff\ufffe\uffff]/u;
-const RE_ESC = /[&<>"]|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff\ufffe\uffff]+/gu;
+// No `u` flag: on affected JavaScriptCore builds a `u`-flagged [\ud800-\udfff]
+// class matches the low surrogate inside a valid pair (#148), so the #72
+// strip corrupted emoji into lone surrogates. A valid pair is matched first
+// and passed through as one unit, so lone surrogates are still stripped on
+// every engine. The gate also matches a pair; the replace keeps it, so that
+// only ever skips the fast path.
+const RE_NEEDS_ESC = /[\ud800-\udbff][\udc00-\udfff]|[&<>"]|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff\ufffe\uffff]/;
+const RE_ESC = /[\ud800-\udbff][\udc00-\udfff]|[&<>"]|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff\ufffe\uffff]+/g;
 const ESC: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
+
+// A match is a valid pair only when both units are one: a lone high
+// surrogate followed by another dropped character (e.g. "\ud800\x01") is one
+// run of the strip class, not a pair, and must still be dropped.
+const isPair = (m: string): boolean =>
+  m.length === 2 &&
+  m.charCodeAt(0) >= 0xd800 &&
+  m.charCodeAt(0) <= 0xdbff &&
+  m.charCodeAt(1) >= 0xdc00 &&
+  m.charCodeAt(1) <= 0xdfff;
 
 // Removing these characters in esc() can make validated values unsafe.
 export const RE_INVALID_XML = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff\ufffe\uffff]/u;
 
 // Escapes text for XML and drops invalid XML characters and DEL.
 export function esc(text: string): string {
-  return RE_NEEDS_ESC.test(text) ? text.replace(RE_ESC, (c) => ESC[c] ?? '') : text;
+  return RE_NEEDS_ESC.test(text) ? text.replace(RE_ESC, (m) => (isPair(m) ? m : ESC[m] ?? '')) : text;
 }
 
 // Escapes text that is only ever read as text: a tooltip, an accessible name, a `data-id`. Entity
