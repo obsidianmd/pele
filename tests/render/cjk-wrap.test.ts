@@ -46,6 +46,32 @@ describe('CJK label wrapping', () => {
     expect(lines('Supercalifragilisticexpialidocious', 60)).toEqual(['Supercalifragilisticexpialidocious']);
   });
 
+  it('breaks the #145 Chinese labels at word boundaries, with no lone-character last line', () => {
+    expect(lines('主人读草稿后采纳（成为新版本）', 200)).toEqual(['主人读草稿后采纳', '（成为新版本）']);
+    expect(lines('站点在建立会话之前就结束了。', 200)).toEqual(['站点在建立会话', '之前就结束了。']);
+    expect(lines('把贴文原文贴进笔记，核对时用', 200)).toEqual(['把贴文原文贴进笔记，', '核对时用']);
+    expect(lines('用户在设置里关掉同步（默认开启）', 200)).toEqual(['用户在设置里关掉同步', '（默认开启）']);
+  });
+
+  it('keeps every character and the kinsoku rules for the #145 labels at any width', () => {
+    const labels = [
+      '主人读草稿后采纳（成为新版本）',
+      '站点在建立会话之前就结束了。',
+      '把贴文原文贴进笔记，核对时用',
+      '用户在设置里关掉同步（默认开启）',
+    ];
+    for (const label of labels) {
+      for (let max = 40; max <= 240; max += 8) {
+        const out = lines(label, max);
+        expect(out.join('')).toBe(label);
+        for (const line of out) {
+          expect(line).not.toMatch(/^[、。，．）」』】]/);
+          expect(line).not.toMatch(/[「『（【]$/);
+        }
+      }
+    }
+  });
+
   it('makes a long Japanese flowchart label narrower than the unwrapped text', () => {
     const label = '在庫引当の結果を基幹システムへ連携し出荷指示を倉庫管理システムに送信する';
     const width = (svg: string): number => Number(/viewBox="[-\d.]+ [-\d.]+ ([\d.]+)/.exec(svg)![1]);

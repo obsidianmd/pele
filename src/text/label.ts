@@ -72,6 +72,60 @@ const RE_PIECE = new RegExp(
   `\\s*(?:[${OPEN}]*[${CJK}][${CLOSE}]*|[^\\s${CJK}${HINT}]+[${HINT}]*[${CLOSE}]*|[${HINT}]+)\\s*|\\s+`,
   'g'
 );
+// A piece that is only CJK characters and the punctuation that attaches to them.
+const RE_CJK_PIECE = new RegExp(`^[${OPEN}${CJK}${CLOSE}]+$`);
+
+// Word segmentation for CJK wrapping: Intl.Segmenter groups characters into
+// words, so a break never lands inside one. CJK segmentation is script-based,
+// so the default locale segments Chinese and Japanese the same. Absent (old
+// runtimes), wrapping falls back to one character at a time.
+let segmenter: Intl.Segmenter | undefined;
+let segmenterTried = false;
+function wordSegmenter(): Intl.Segmenter | undefined {
+  if (!segmenterTried) {
+    segmenterTried = true;
+    try {
+      segmenter = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, { granularity: 'word' }) : undefined;
+    } catch {
+      segmenter = undefined;
+    }
+  }
+  return segmenter;
+}
+
+function isCjkPiece(piece: string): boolean {
+  const core = piece.trim();
+  return core !== '' && RE_CJK_PIECE.test(core);
+}
+
+// Splits a span's text into the pieces wrap() may break between. CJK runs are
+// grouped into words; other text keeps the regex pieces. Spans with a soft
+// hyphen keep the regex pieces, because the soft-hyphen width logic reads the
+// hyphen off the end of a piece.
+function splitPieces(text: string): string[] {
+  const fallback = (): string[] => text.match(RE_PIECE) ?? [];
+  if (!RE_CJK.test(text) || text.includes('\u00ad')) return fallback();
+  const seg = wordSegmenter();
+  if (!seg) return fallback();
+  const starts = new Set<number>();
+  for (const part of seg.segment(text)) starts.add(part.index);
+  const raw: { text: string; core: number }[] = [];
+  RE_PIECE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = RE_PIECE.exec(text)) !== null) {
+    raw.push({ text: m[0], core: m.index + (m[0].length - m[0].trimStart().length) });
+  }
+  const merged: string[] = [];
+  for (const piece of raw) {
+    const prev = merged[merged.length - 1];
+    if (prev !== undefined && isCjkPiece(prev) && isCjkPiece(piece.text) && !starts.has(piece.core)) {
+      merged[merged.length - 1] = prev + piece.text;
+    } else {
+      merged.push(piece.text);
+    }
+  }
+  return merged;
+}
 
 // Unique placeholders protect TeX from markup parsing and keep expressions aligned when tags are removed.
 const MARK = 0xe000;
@@ -261,7 +315,7 @@ function wrap(line: Span[], measurer: TextMeasurer, size: number, max: number, o
       width += w;
       continue;
     }
-    const pieces = span.text.match(RE_PIECE) ?? [];
+    const pieces = splitPieces(span.text);
     // A piece ending in a soft hyphen fits if its '-' does, or if the rest of the word does, which
     // hides the hyphen. The line only grows along a word, so no later hyphen in it fits either,
     // and the remaining width of each word makes this one check.
@@ -306,6 +360,128 @@ function wrap(line: Span[], measurer: TextMeasurer, size: number, max: number, o
     }
   }
   if (current.length > 0 || out.length === 0) commit();
+  rebalance(out, widths, measurer, size, max);
+}
+
+// A piece of a wrapped line: plain text, or an icon/math span, which moves as
+// one unbreakable piece.
+interface RebalancePiece {
+  text: string;
+  style: number;
+  span?: Span;
+}
+
+function linePieces(line: Span[]): RebalancePiece[] {
+  const pieces: RebalancePiece[] = [];
+  for (const span of line) {
+    if (span.icon !== undefined || span.math) {
+      pieces.push({ text: '', style: span.style, span });
+      continue;
+    }
+    for (const text of splitPieces(span.text)) pieces.push({ text, style: span.style });
+  }
+  return pieces;
+}
+
+function buildLine(pieces: RebalancePiece[], measurer: TextMeasurer, size: number): { line: Span[]; width: number } {
+  const line: Span[] = [];
+  for (const piece of pieces) {
+    if (piece.span !== undefined) {
+      line.push({ ...piece.span });
+      continue;
+    }
+    const last = line[line.length - 1];
+    if (plain(last) && last.style === piece.style) last.text += piece.text;
+    else line.push({ text: piece.text, style: piece.style, width: 0 });
+  }
+  return { line, width: measureSpans(line, measurer, size) };
+}
+
+function firstTextChar(pieces: RebalancePiece[]): string {
+  for (const piece of pieces) {
+    if (piece.span !== undefined) continue;
+    const text = piece.text.trim();
+    if (text !== '') return text[0]!;
+  }
+  return '';
+}
+
+function lastTextChar(pieces: RebalancePiece[]): string {
+  for (let i = pieces.length - 1; i >= 0; i--) {
+    const piece = pieces[i]!;
+    if (piece.span !== undefined) continue;
+    const text = piece.text.trim();
+    if (text !== '') return text[text.length - 1]!;
+  }
+  return '';
+}
+
+// Drops trailing whitespace from the last text piece of a line, as commit()
+// does for a wrapped line.
+function trimLineEnd(pieces: RebalancePiece[]): void {
+  const last = pieces[pieces.length - 1];
+  if (last !== undefined && last.span === undefined) {
+    last.text = last.text.trimEnd();
+    if (last.text === '') pieces.pop();
+  }
+}
+
+// A wrapped CJK label can still end on one or two characters when the last
+// word is short, so pull whole words down from the previous line until the
+// last line is at least half full. A break after CJK punctuation, or before
+// an opening bracket, is already a good place to stop, so a line that breaks
+// there is left alone once it is a quarter full. Never unbalances the previous
+// line below half, and never moves a piece that would start the last line
+// with closing punctuation or leave the previous line ending on an opening
+// bracket.
+function rebalance(out: Span[][], widths: number[], measurer: TextMeasurer, size: number, max: number): void {
+  if (out.length < 2 || !Number.isFinite(max) || max <= 0) return;
+  let hasCjk = false;
+  for (const line of out) {
+    for (const span of line) {
+      if (RE_CJK.test(span.text)) {
+        hasCjk = true;
+        break;
+      }
+    }
+    if (hasCjk) break;
+  }
+  if (!hasCjk) return;
+  const prevPieces = linePieces(out[out.length - 2]!);
+  const lastPieces = linePieces(out[out.length - 1]!);
+  let prevWidth = widths[widths.length - 2]!;
+  let lastWidth = widths[widths.length - 1]!;
+  while (lastWidth < max / 2) {
+    if ((OPEN.includes(firstTextChar(lastPieces)) || CLOSE.includes(lastTextChar(prevPieces))) && lastWidth >= max / 4) break;
+    if (prevPieces.length <= 1) break;
+    const piece = prevPieces[prevPieces.length - 1]!;
+    if (piece.span !== undefined) break;
+    const text = piece.text.trim();
+    if (text === '') {
+      prevPieces.pop();
+      trimLineEnd(prevPieces);
+      const prev = buildLine(prevPieces, measurer, size);
+      out[out.length - 2] = prev.line;
+      widths[widths.length - 2] = prev.width;
+      prevWidth = prev.width;
+      continue;
+    }
+    const w = measurer.width(piece.text, size, piece.style);
+    if (lastWidth + w > max || prevWidth - w < max / 2) break;
+    if (CLOSE.includes(text[0]!)) break;
+    if (OPEN.includes(lastTextChar(prevPieces.slice(0, -1)))) break;
+    prevPieces.pop();
+    trimLineEnd(prevPieces);
+    lastPieces.unshift({ text: piece.text.trimStart(), style: piece.style });
+    const prev = buildLine(prevPieces, measurer, size);
+    const last = buildLine(lastPieces, measurer, size);
+    out[out.length - 2] = prev.line;
+    out[out.length - 1] = last.line;
+    widths[widths.length - 2] = prev.width;
+    widths[widths.length - 1] = last.width;
+    prevWidth = prev.width;
+    lastWidth = last.width;
+  }
 }
 
 export function layoutLabel(
