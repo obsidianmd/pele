@@ -13,12 +13,14 @@ describe('treeView rendering', () => {
     const { svg, type } = render(TREE, options);
     expect(type).toBe('treeView');
     expect(supports(TREE)).toBe(true);
-    expect(count(svg, /class="pele-node pele-tree-(dir|file)"/g)).toBe(5);
-    expect(count(svg, /class="pele-node pele-tree-dir"/g)).toBe(2);
+    // Six rows: the root `/` Mermaid draws first, then the five entries.
+    expect(count(svg, /class="pele-node pele-tree-(dir|file)"/g)).toBe(6);
+    expect(count(svg, /class="pele-node pele-tree-dir"/g)).toBe(3);
+    expect(svg).toContain('font-weight="var(--_hw)" xml:space="preserve">/</text>');
     expect(svg).toContain('font-weight="var(--_hw)" xml:space="preserve">my-project</text>');
     expect(svg).toContain('xml:space="preserve">index.js</text>');
-    expect(count(svg, /<path d="M/g)).toBe(2);
-    expect(svg).not.toContain('>/<');
+    expect(count(svg, /<path d="M/g)).toBe(3);
+    expect(svg).not.toContain('></text>');
   });
 
   it('exposes the model as a tree', () => {
@@ -61,6 +63,18 @@ describe('treeView rendering', () => {
     );
   });
 
+  it('draws the root row and styles annotations like Mermaid (#147)', () => {
+    const { svg } = render('treeView-beta\n    wiki/ :::highlight ## wiki docs\n        page.md\n    README.md ## top level\n', options);
+    // Mermaid draws the synthetic root `/` as the first row, in bold like any directory.
+    expect(svg).toContain('font-weight="var(--_hw)" xml:space="preserve">/</text>');
+    // Descriptions are green italic, as in Mermaid.
+    expect(svg).toContain('class="pele-tree-description"');
+    expect(svg).toContain('fill="#6a9955"');
+    // The highlight is Mermaid's amber, with a stroke, so it shows on any theme.
+    expect(svg).toContain('class="pele-tree-highlight"');
+    expect(svg).toContain('fill="rgba(255,193,7,0.15)" stroke="#ffc107"');
+  });
+
   it('draws highlights, descriptions in one column, and extra classes', () => {
     const { svg } = render('treeView-beta\n    src/\n        App.tsx :::highlight ## main\n        index.js :::mine ## entry point\n', options);
     expect(count(svg, /class="pele-tree-highlight"/g)).toBe(1);
@@ -77,7 +91,7 @@ describe('treeView rendering', () => {
     const plain = render(src, options).svg;
     for (const maxWidth of [undefined, 90]) {
       const svg = render(src, { ...options, maxWidth, monospace: ['files'] }).svg;
-      expect(count(svg, /<text class="pele-label"[^>]* font-family="var\(--_fm\)"/g)).toBe(maxWidth ? 3 : 2);
+      expect(count(svg, /<text class="pele-label"[^>]* font-family="var\(--_fm\)"/g)).toBe(maxWidth ? 4 : 3);
       expect(svg).toMatch(/<text class="pele-label"[^>]* font-weight="var\(--_hw\)"[^>]*>src</);
       expect(svg).not.toMatch(/<text class="pele-tree-description"[^>]* font-family=/);
     }
@@ -91,7 +105,7 @@ describe('treeView rendering', () => {
   it('shows icons only when asked, and offers each icon name to the host', () => {
     expect(render(TREE, options).svg).not.toContain('pele-icon');
     const shown = render('---\nconfig:\n  treeView:\n    showIcons: true\n---\n' + TREE, options).svg;
-    expect(count(shown, /class="pele-icon"/g)).toBe(5);
+    expect(count(shown, /class="pele-icon"/g)).toBe(6);
     expect(shown).toContain('data-icon="mermaid-treeview:folder"');
     expect(shown).toContain('data-icon="mermaid-treeview:file"');
 
@@ -114,8 +128,8 @@ describe('treeView rendering', () => {
     expect(svg).toContain('data-icon="material:typescript"');
     expect(svg).toContain('data-icon="material:docker"');
     expect(count(svg, /data-icon="mermaid-treeview:file"/g)).toBe(1);
-    expect(count(svg, /data-icon="mermaid-treeview:folder"/g)).toBe(1);
-    expect(count(svg, /class="pele-icon"/g)).toBe(4);
+    expect(count(svg, /data-icon="mermaid-treeview:folder"/g)).toBe(2);
+    expect(count(svg, /class="pele-icon"/g)).toBe(5);
   });
 
   it('keeps names as written', () => {

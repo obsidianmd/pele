@@ -60,7 +60,8 @@ function draw(model: TreeViewModel, config: Config, options: RenderOptions, tigh
 
   const { paddingX, paddingY, rowIndent, lineThickness } = treeSettings(config);
   let maxDepth = 0;
-  const depths: [TreeNode, number][] = model.root.children.map(node => [node, 0]);
+  // Mermaid draws the synthetic root (`/`) as the first row, so every entry sits one level deeper.
+  const depths: [TreeNode, number][] = [[model.root, 0]];
   for (let i = 0; tight && i < depths.length; i++) {
     const [node, depth] = depths[i];
     maxDepth = Math.max(maxDepth, depth);
@@ -82,7 +83,7 @@ function draw(model: TreeViewModel, config: Config, options: RenderOptions, tigh
     const slot = hasIcon(list);
     for (let i = list.length - 1; i >= 0; i--) pending.push([list[i], depth, slot]);
   };
-  push(model.root.children, 0);
+  push([model.root], 0);
   let labelRight = 0;
   let anyHighlight = false;
   let rowsHeight = 0;
@@ -146,10 +147,11 @@ function draw(model: TreeViewModel, config: Config, options: RenderOptions, tigh
     const directory = node.nodeType === 'directory';
     let inner = '';
     if (row.highlighted) {
+      // Mermaid's highlight is amber, not the theme accent: rgba(255, 193, 7, 0.15) with a #ffc107 stroke.
       const x = inset + row.x - HIGHLIGHT_OVERHANG;
       inner += `<rect class="pele-tree-highlight" x="${num(x)}" y="${num(top + row.top + 1)}" width="${num(
         totalWidth - inset + HIGHLIGHT_OVERHANG - x
-      )}" height="${num(row.height - 2)}" fill="var(--_c)" fill-opacity="0.14"${ROUNDED}/>`;
+      )}" height="${num(row.height - 2)}" fill="rgba(255,193,7,0.15)" stroke="#ffc107" stroke-width="1"${ROUNDED}/>`;
     }
     if (row.icon !== undefined) {
       const name = row.icon.startsWith(BUILTIN_PACK + ':') ? row.icon.slice(BUILTIN_PACK.length + 1) : '';
@@ -169,11 +171,12 @@ function draw(model: TreeViewModel, config: Config, options: RenderOptions, tigh
       }${family} xml:space="preserve">${esc(row.text)}</text>`;
     }
     if (row.description) {
-      inner += leftLabelSvg(row.description, inset + row.labelX, top + row.top + paddingY + (row.label?.height ?? 0), ' class="pele-tree-description" font-style="italic" fill="var(--_m)"');
+      // Mermaid's annotation colour is green (#6a9955), italic.
+      inner += leftLabelSvg(row.description, inset + row.labelX, top + row.top + paddingY + (row.label?.height ?? 0), ' class="pele-tree-description" font-style="italic" fill="#6a9955"');
     } else if (node.description) {
       inner += `<text class="pele-tree-description" x="${num(inset + descX)}" y="${num(
         cy + baseline
-      )}" font-style="italic" fill="var(--_m)" xml:space="preserve">${esc(decodeEntities(node.description))}</text>`;
+      )}" font-style="italic" fill="#6a9955" xml:space="preserve">${esc(decodeEntities(node.description))}</text>`;
     }
     body += `<g class="pele-node pele-tree-${directory ? 'dir' : 'file'}${classNames(node.cssClass ?? '')}" data-id="${escText(
       node.name
