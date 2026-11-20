@@ -255,10 +255,13 @@ describe('mobile diagram layouts', () => {
   it('starts every line of a wrapped filename at one place and keeps its spaces', () => {
     const narrow = render('treeView-beta\n  "my  file  with   spaces.txt"\n  "another_really_long_file_name  with  spaces_in_it.txt"\n', { ...options, maxWidth: 200 });
     const lines = [...narrow.svg.matchAll(/<text class="pele-label"([^>]*)>([^<]*)<\/text>/g)];
-    expect(lines.map(match => match[2])).toEqual(['my  file  with   spaces.txt', 'another_really_long_file', '_name  with', 'spaces_in_it.txt']);
-    for (const [, attrs] of lines) {
+    // The first line is the root `/` row, one indent left of the files.
+    expect(lines[0][2]).toBe('/');
+    const files = lines.slice(1);
+    expect(files.map(match => match[2])).toEqual(['my  file  with', 'spaces.txt', 'another_really_long_f', 'ile_name  with', 'spaces_in_it.txt']);
+    for (const [, attrs] of files) {
       expect(attrs).toContain(' text-anchor="start" xml:space="preserve"');
-      expect(attrs.match(/ x="([\d.]+)"/)?.[1]).toBe(lines[0][1].match(/ x="([\d.]+)"/)![1]);
+      expect(attrs.match(/ x="([\d.]+)"/)?.[1]).toBe(files[0][1].match(/ x="([\d.]+)"/)![1]);
     }
   });
 
