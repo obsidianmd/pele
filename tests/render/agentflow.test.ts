@@ -393,6 +393,19 @@ describe('agentflow rendering', () => {
     });
   });
 
+  it('keeps the dashes of an animated edge, without motion', () => {
+    const svg = svgOf(
+      'agentflow-beta TB\n  a e1@--> b\n  e1@{ animate: true }\n  a e2@--> b\n  e2@{ animation: slow }\n  a e3@--> b\n  e3@{ animate: false }'
+    );
+    const [fast, slow, still] = edges(svg);
+    expect(fast.classes).toContain('edge-animation-fast');
+    expect(fast.body).toContain('stroke-dasharray="9 5"');
+    expect(slow.classes).toContain('edge-animation-slow');
+    expect(slow.body).toContain('stroke-dasharray="9 5"');
+    expect(still.classes).not.toContain('edge-animation');
+    expect(still.body).not.toContain('stroke-dasharray');
+  });
+
   it('skips an edge to the id Mermaid reserves and creates no node for', () => {
     const svg = svgOf('agentflow-beta TB\n  connectors["Mine"] --> b');
     expect(svg).not.toContain('data-id="connectors"');
