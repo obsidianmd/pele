@@ -200,6 +200,14 @@ export function buildAgentGraph(db: AgentflowDb, paletteLength: number, defaultC
     if (raw.style) styles.push(...raw.style);
     const arrow =
       raw.type === 'arrow_open' ? 'none' : raw.type === 'arrow_cross' || raw.type === 'arrow_point' ? raw.type : 'arrow_point';
+    // Mermaid marks an animated edge edge-animation-fast (animate: true) or
+    // edge-animation-<speed> (animation: fast|slow); see flowchart/graph.ts.
+    const animation =
+      typeof raw.animation === 'string' && raw.animation !== ''
+        ? raw.animation
+        : raw.animate === true
+          ? 'fast'
+          : undefined;
     edges.push({
       id: raw.id || `L_${start}_${end}_${index}`,
       isUserDefinedId: raw.isUserDefinedId,
@@ -211,7 +219,9 @@ export function buildAgentGraph(db: AgentflowDb, paletteLength: number, defaultC
       thickness: raw.stroke,
       pattern: raw.stroke,
       minlen: raw.length,
-      classes: 'edge-thickness-normal edge-pattern-solid flowchart-link',
+      classes:
+        'edge-thickness-normal edge-pattern-solid flowchart-link' +
+        (animation === undefined ? '' : ` edge-animation-${animation}`),
       arrowTypeStart: 'none',
       arrowTypeEnd: arrow,
       cssCompiledStyles: compiled(raw.classes),

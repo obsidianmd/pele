@@ -361,9 +361,12 @@ function draw(db: AgentflowDb, config: Config, options: RenderOptions, turned: b
     const kind = edge.thickness === 'dotted' ? 'reference' : endType === 'arrow_cross' ? 'failure' : 'sequence';
     const classes = classNames(edge.classes.replace(/edge-thickness-normal|edge-pattern-solid|flowchart-link/g, ''));
     if (over === '') casings += edgeCasing(path, 'none', endType, style?.line);
+    // Mermaid animates these dashes. A still picture keeps the dashes.
+    const animated = edge.animate === true || (typeof edge.animation === 'string' && edge.animation !== '');
+    const dashes = animated ? '9 5' : edge.thickness === 'dotted' ? '3 4' : '';
     edgesOut +=
       `<g class="pele-edge pele-edge-${kind}${classes}" data-id="${escText(edge.id)}"${over ? ` stroke="${over}"` : ''}${style?.line ?? ''}>` +
-      `<path d="${path.d}"${edge.thickness === 'dotted' ? ' stroke-dasharray="3 4"' : ''}/>` +
+      `<path d="${path.d}"${dashes ? ` stroke-dasharray="${dashes}"` : ''}/>` +
       marker(endType, path.ex, path.ey, path.edx, path.edy, color) +
       '</g>';
     if (label.width > 0) {

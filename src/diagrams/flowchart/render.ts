@@ -332,8 +332,11 @@ function draw(db: FlowDb, config: Config, options: RenderOptions, variant: FlowV
       }
       const over = overFills(path.d, [path.sx, path.sy, path.ex, path.ey], fills, style?.line, path.tokens);
       const color = over || (style?.stroke && edge.thickness !== 'invisible' ? esc(style.stroke) : 'var(--_l)');
+      // Mermaid animates these dashes. A still picture keeps the dashes.
+      const animated = edge.animate === true || (edge.animation !== undefined && edge.animation !== '');
       let attrs = '';
       if (edge.thickness === 'thick') attrs += ' stroke-width="2.5"';
+      if (animated) attrs += ' stroke-dasharray="9 5"';
       else if (edge.thickness === 'dotted') attrs += ' stroke-dasharray="3 4"';
       const classes = classNames(edge.classes.replace(/edge-thickness-normal|edge-pattern-solid|flowchart-link/g, ''));
       if (over === '') casings += edgeCasing(path, startType, endType, style?.line, edge.thickness === 'thick');

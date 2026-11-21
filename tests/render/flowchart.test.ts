@@ -600,4 +600,22 @@ describe('public api', () => {
     expect(svg).toMatch(/<text[^>]* font-size="14"[^>]*><tspan[^>]* baseline-shift="sub" font-size="smaller">2<\/tspan><\/text>/);
     expect(() => assertWellFormed(svg)).not.toThrow();
   });
+
+  it('keeps the dashes of an animated edge, without motion (#153)', () => {
+    const { svg } = render(
+      'flowchart LR\n  A e1@==> B\n  e1@{ animate: true }\n  A e2@--> B\n  e2@{ animation: slow }\n  A e3@--> B\n  e3@{ animate: false }',
+      options
+    );
+    const group = (id: string): string =>
+      new RegExp(`<g class="pele-edge[^"]*" data-id="${id}"[^>]*>.*?</g>`).exec(svg)![0];
+    // Mermaid animates these dashes; a still picture keeps the dashes. A thick
+    // animated edge keeps its width as well.
+    expect(group('e1')).toContain('edge-animation-fast');
+    expect(group('e1')).toContain('stroke-dasharray="9 5"');
+    expect(group('e1')).toContain('stroke-width="2.5"');
+    expect(group('e2')).toContain('edge-animation-slow');
+    expect(group('e2')).toContain('stroke-dasharray="9 5"');
+    expect(group('e3')).not.toContain('edge-animation');
+    expect(group('e3')).not.toContain('stroke-dasharray');
+  });
 });

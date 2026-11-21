@@ -245,6 +245,10 @@ export function buildFlowGraph(model: FlowchartModel & Pick<FlowDb, 'subgraph'>,
     const styles = [...(model.defaultEdgeStyle ?? [])];
     if (raw.style) styles.push(...raw.style);
     const plain = raw.stroke === 'invisible' || raw.type === 'arrow_open';
+    // Mermaid marks an animated edge edge-animation-fast (animate: true) or
+    // edge-animation-<speed> (animation: fast|slow); the class is what a host
+    // with Mermaid's CSS animates, so it travels with the edge.
+    const animation = raw.animation || (raw.animate === true ? 'fast' : undefined);
     edges.push({
       id: raw.id || `L_${start}_${end}_${index}`,
       isUserDefinedId: raw.isUserDefinedId,
@@ -256,7 +260,11 @@ export function buildFlowGraph(model: FlowchartModel & Pick<FlowDb, 'subgraph'>,
       thickness: raw.stroke,
       pattern: raw.stroke,
       minlen: raw.length,
-      classes: raw.stroke === 'invisible' ? '' : 'edge-thickness-normal edge-pattern-solid flowchart-link',
+      classes:
+        raw.stroke === 'invisible'
+          ? ''
+          : 'edge-thickness-normal edge-pattern-solid flowchart-link' +
+            (animation === undefined ? '' : ` edge-animation-${animation}`),
       arrowTypeStart: plain ? 'none' : arrowStart,
       arrowTypeEnd: plain ? 'none' : arrowEnd,
       cssCompiledStyles: compiled(raw.classes),
