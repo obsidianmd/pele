@@ -184,6 +184,22 @@ describe('agentflow rendering', () => {
     expect(all[0].body).toMatch(/<path d="M[-\d.]+,[-\d.]+C/);
   });
 
+  it('leaves no empty band above a row whose self-loop label hangs below it (#119)', () => {
+    const tall = render(
+      'agentflow-beta LR\n  a["Alpha"]\n  a -- "line one<br/>line two<br/>line three<br/>line four" --> a\n  a --> b["Beta"]',
+      options,
+    );
+    const plain = render('agentflow-beta LR\n  a["Alpha"]\n  a --> b["Beta"]', options);
+    // The loop and its label hang below the node, so the row sits at the top exactly
+    // where it sits without the loop.
+    expect(node(tall.svg, 'a').y).toBeCloseTo(node(plain.svg, 'a').y, 0);
+    expect(node(tall.svg, 'b').y).toBeCloseTo(node(tall.svg, 'a').y, 0);
+    expect(tall.height).toBeLessThan(plain.height + 140);
+    expect(tall.height).toBeGreaterThan(plain.height + 50);
+    const label = [...tall.svg.matchAll(/<g class="pele-edge-label"[^>]*><rect x="[\d.]+" y="([\d.]+)" width="[\d.]+" height="([\d.]+)"/g)][0];
+    expect(Number(label[1]) + Number(label[2])).toBeLessThanOrEqual(tall.height - 4);
+  });
+
   it('frames a flow around its members, with its title', () => {
     const svg = svgOf('agentflow-beta TB\n  flow team["Content Team"]\n    a["A"] --> b["B"]\n  end\n  c["C"]\n  b --> c');
     const team = frame(svg, 'team');

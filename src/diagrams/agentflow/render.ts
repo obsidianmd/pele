@@ -2,7 +2,7 @@ import { cnode, compoundLayout, direction, inheritCrossedDirections, shiftLayout
 import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num } from '../../svg/builder.js';
 import { clusterTitleX, markCrossings, type Crossings } from '../../svg/cluster.js';
-import { casingsSvg, edgeCasing, edgeLabelSvg, loopPath, marker, markerTrim, overFills, routePath, type EdgePath, type Fill } from '../../svg/edges.js';
+import { casingsSvg, edgeCasing, edgeLabelSvg, loopCrop, loopPath, marker, markerTrim, overFills, routePath, type EdgePath, type Fill } from '../../svg/edges.js';
 import { inkFill, paints } from '../../svg/ink.js';
 import { svgDocument } from '../../svg/root.js';
 import { PAD_X, PAD_Y, drawShape, insetRoute, shapeFilled, shapeSize } from '../../svg/shapes.js';
@@ -204,12 +204,27 @@ function draw(db: AgentflowDb, config: Config, options: RenderOptions, turned: b
 
   const title = layoutLabel(db.title, false, measurer, size, 4000, Style.Bold);
   const titleHeight = title.height > 0 ? title.height + 12 : 0;
-  const inner = Math.max(layout.width, title.width);
-  const ox = pad + (inner - layout.width) / 2;
-  const oy = pad + titleHeight;
+  // A self-loop's box grows on both sides while the loop hangs on one, so the far side
+  // holds an empty band; shift the drawing to close it and shrink the sheet to fit.
+  const crop = loopCrop(cnodes, views, cedges, edgeLabels);
+  // A held edge's label sits midway between a node and its container's border, so it can
+  // reach half its size past either end; keep the crop clear of it.
+  let cropTop = crop.top;
+  let cropLeft = crop.left;
+  for (const { label, src, dst } of held) {
+    const inner = contains(dst, src) ? src : dst;
+    const outer = inner === src ? dst : src;
+    const top = Math.min(cnodes[inner].y - views[inner].h / 2, cnodes[outer].y - cnodes[outer].h / 2) - label.height / 2;
+    const left = Math.min(cnodes[inner].x - views[inner].w / 2, cnodes[outer].x - cnodes[outer].w / 2) - label.width / 2;
+    cropTop = Math.min(cropTop, Math.max(0, top));
+    cropLeft = Math.min(cropLeft, Math.max(0, left));
+  }
+  const inner = Math.max(layout.width - cropLeft, title.width);
+  const ox = pad - cropLeft + (inner - (layout.width - cropLeft)) / 2;
+  const oy = pad + titleHeight - cropTop;
   shiftLayout(cnodes, cedges, ox, oy);
   const width = Math.ceil(inner + 2 * pad);
-  const height = Math.ceil(layout.height + titleHeight + 2 * pad);
+  const height = Math.ceil(layout.height - cropTop + titleHeight + 2 * pad);
   const links: LinkInfo[] = [];
 
   // An edge between a node and a container around it runs straight between the node and the
