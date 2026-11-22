@@ -4,7 +4,7 @@ import type { LayeredOptions } from '../../layout/layered.js';
 import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num } from '../../svg/builder.js';
 import { clusterTitleX, markCrossings, struckTitle, titleCrossed, type Crossings } from '../../svg/cluster.js';
-import { casingsSvg, edgeCasing, edgeLabelSvg, loopPath, marker, markerTrim, overFills, routePath, sideReach, type EdgePath, type Fill } from '../../svg/edges.js';
+import { casingsSvg, edgeCasing, edgeLabelSvg, loopCrop, loopPath, marker, markerTrim, overFills, routePath, sideReach, type EdgePath, type Fill } from '../../svg/edges.js';
 import { inkFill, paints } from '../../svg/ink.js';
 import { svgDocument } from '../../svg/root.js';
 import { drawShape, endSide, insetRoute, shapeFilled, shapeHasLabel, shapeSize, shapeSpan } from '../../svg/shapes.js';
@@ -191,12 +191,15 @@ function draw(db: FlowDb, config: Config, options: RenderOptions, variant: FlowV
 
   const title = titleLabel(db.title, measurer, size, tight ? titleRoom(options) : 4000);
   const titleHeight = title.height > 0 ? title.height + 12 : 0;
-  const inner = Math.max(layout.width, title.width);
-  const ox = pad + (inner - layout.width) / 2;
-  const oy = pad + titleHeight;
+  // A self-loop's box grows on both sides while the loop hangs on one, so the far side
+  // holds an empty band; shift the drawing to close it and shrink the sheet to fit.
+  const crop = loopCrop(cnodes, views, cedges, edgeLabels);
+  const inner = Math.max(layout.width - crop.left, title.width);
+  const ox = pad - crop.left + (inner - (layout.width - crop.left)) / 2;
+  const oy = pad + titleHeight - crop.top;
   shiftLayout(cnodes, cedges, ox, oy);
   const width = Math.ceil(inner + 2 * pad);
-  const height = Math.ceil(layout.height + titleHeight + 2 * pad);
+  const height = Math.ceil(layout.height - crop.top + titleHeight + 2 * pad);
   const links: LinkInfo[] = [];
 
   const crossings: Crossings = new Map();

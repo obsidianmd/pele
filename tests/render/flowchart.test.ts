@@ -18,6 +18,15 @@ function tryRender(src: string): string | undefined {
   }
 }
 
+// The centre of the group drawn for a node.
+function nodeXY(svg: string, id: string): [number, number] {
+  const m = new RegExp(`data-id="${id}" transform="translate\\(([-\\d.]+),([-\\d.]+)\\)"`).exec(svg);
+  if (!m) throw new Error(`no node ${id}`);
+  return [Number(m[1]), Number(m[2])];
+}
+const nodeX = (svg: string, id: string): number => nodeXY(svg, id)[0];
+const nodeY = (svg: string, id: string): number => nodeXY(svg, id)[1];
+
 describe('flowchart rendering', () => {
   it('renders every corpus input that parses, as well-formed and inert SVG', () => {
     let rendered = 0;
@@ -49,6 +58,40 @@ describe('flowchart rendering', () => {
     const wide = render('flowchart LR\n  A --> B --> C', options);
     expect(tall.height).toBeGreaterThan(tall.width);
     expect(wide.width).toBeGreaterThan(wide.height);
+  });
+
+  it('leaves no empty band above a row whose self-loop label hangs below it (#119)', () => {
+    const tall = render(
+      'flowchart LR\n  qs(("qs")) --> ql(("ql"))\n  ql -- "line one<br/>line two<br/>line three<br/>line four<br/>line five<br/>line six<br/>line seven<br/>line eight" --> ql\n  ql --> qa(("qa"))',
+      options,
+    );
+    const plain = render('flowchart LR\n  qs(("qs")) --> ql(("ql"))\n  ql --> qa(("qa"))', options);
+    // The loop and its label hang below the node, so the row sits at the top exactly
+    // where it sits without the loop, and the height only grows by what hangs below.
+    expect(nodeY(tall.svg, 'ql')).toBeCloseTo(nodeY(plain.svg, 'ql'), 0);
+    expect(nodeY(tall.svg, 'qs')).toBeCloseTo(nodeY(tall.svg, 'ql'), 0);
+    expect(nodeY(tall.svg, 'qa')).toBeCloseTo(nodeY(tall.svg, 'ql'), 0);
+    expect(tall.height).toBeLessThan(plain.height + 200);
+    expect(tall.height).toBeGreaterThan(plain.height + 100);
+    const label = [...tall.svg.matchAll(/<g class="pele-edge-label"[^>]*><rect x="[\d.]+" y="([\d.]+)" width="[\d.]+" height="([\d.]+)"/g)][0];
+    expect(Number(label[1]) + Number(label[2])).toBeLessThanOrEqual(tall.height - 4);
+  });
+
+  it('leaves no empty band to the left of a column whose self-loop label hangs to its right (#119)', () => {
+    const wide = render(
+      'flowchart TB\n  qs(("qs")) --> ql(("ql"))\n  ql -- "a very long loop label that keeps going and going" --> ql\n  ql --> qa(("qa"))',
+      options,
+    );
+    const plain = render('flowchart TB\n  qs(("qs")) --> ql(("ql"))\n  ql --> qa(("qa"))', options);
+    // The loop and its label hang to the right of the node, so the column sits at the
+    // left exactly where it sits without the loop.
+    expect(nodeX(wide.svg, 'ql')).toBeCloseTo(nodeX(plain.svg, 'ql'), 0);
+    expect(nodeX(wide.svg, 'qs')).toBeCloseTo(nodeX(wide.svg, 'ql'), 0);
+    expect(nodeX(wide.svg, 'qa')).toBeCloseTo(nodeX(wide.svg, 'ql'), 0);
+    expect(wide.width).toBeLessThan(plain.width + 230);
+    expect(wide.width).toBeGreaterThan(plain.width + 150);
+    const label = [...wide.svg.matchAll(/<g class="pele-edge-label"[^>]*><rect x="([\d.]+)" y="[\d.]+" width="([\d.]+)" height="[\d.]+"/g)][0];
+    expect(Number(label[1]) + Number(label[2])).toBeLessThanOrEqual(wide.width - 4);
   });
 
   it('themes through custom properties with fallbacks and no style element', () => {

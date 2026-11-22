@@ -547,3 +547,40 @@ export function loopPath(
     edy: sideways ? -reach / len : -spread / len,
   };
 }
+
+// How far the drawing reaches from the top and left edges of the layout, in layout
+// coordinates. A self-loop hangs on one side of its node only, but the node's layout
+// box grows on both sides, so the far side holds an empty band as wide as the loop's
+// reach; measuring what is actually drawn recovers it. A group draws its whole box,
+// any other node draws its shape's size, and a loop's label and path never reach past
+// its node on this side — the label is re-placed when drawn, so the layout's copy of
+// it is stale and left out, and the path starts at the node's edge and runs outward.
+export function loopCrop(
+  nodes: readonly { x: number; y: number; w: number; h: number; isGroup: boolean }[],
+  drawn: readonly { w: number; h: number }[],
+  edges: readonly { src: number; dst: number; route: readonly number[]; labelX: number; labelY: number }[],
+  labels: readonly Label[],
+): { top: number; left: number } {
+  let top = Infinity;
+  let left = Infinity;
+  for (let i = 0; i < nodes.length; i++) {
+    const c = nodes[i];
+    const d = drawn[i];
+    const hw = c.isGroup ? c.w / 2 : d.w / 2;
+    const hh = c.isGroup ? c.h / 2 : d.h / 2;
+    if (c.y - hh < top) top = c.y - hh;
+    if (c.x - hw < left) left = c.x - hw;
+  }
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
+    if (e.src === e.dst) continue;
+    const label = labels[i];
+    if (label.height > 0 && e.labelY - label.height / 2 < top) top = e.labelY - label.height / 2;
+    if (label.width > 0 && e.labelX - label.width / 2 < left) left = e.labelX - label.width / 2;
+    for (let j = 1; j < e.route.length; j += 3) {
+      if (e.route[j] < top) top = e.route[j];
+      if (e.route[j - 1] < left) left = e.route[j - 1];
+    }
+  }
+  return { top: top === Infinity ? 0 : Math.max(0, top), left: left === Infinity ? 0 : Math.max(0, left) };
+}
