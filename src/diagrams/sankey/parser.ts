@@ -129,8 +129,14 @@ export function parseSankey(src: string, db: SankeyDb, source = src): void {
     expect(T.COMMA, ", 'NEWLINE', 'EOF'");
     const start = starts[i];
     // Keep Mermaid's numeric prefixes, but reject non-finite values.
-    const value = parseFloat(field());
-    if (!Number.isFinite(value)) throw error(start, 'Expecting a number');
+    // Name the refused value: a pasted CSV header row fails here, and the
+    // name is what tells the reader which row to drop.
+    const raw = field().trim();
+    const value = parseFloat(raw);
+    if (!Number.isFinite(value)) {
+      const shown = raw.length > 32 ? `${raw.slice(0, 32)}...` : raw;
+      throw error(start, `Expecting a number, got '${shown}'`);
+    }
     const source = db.findOrCreateNode(from);
     const target = db.findOrCreateNode(to);
     db.addLink(source, target, value);
