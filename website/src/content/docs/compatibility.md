@@ -75,7 +75,7 @@ Labels use SVG text with support for line breaks, bold, and italic. Arbitrary HT
 
 Sankey node names also accept Unicode text, including accented letters, non-Latin scripts, and emoji, in quoted and unquoted CSV fields. This extends Mermaid 12.1.0's ASCII-only Sankey grammar. CSV commas, quotes, and line breaks keep their usual meaning.
 
-Pele and Mermaid read a Sankey value up to the first character that isn't part of a number, so `50%` is 50. If a value doesn't start with a number, such as `abc`, Mermaid draws an empty flow and Pele shows a syntax error instead.
+Pele and Mermaid read a Sankey value up to the first character that isn't part of a number, so `50%` is 50. If a value doesn't start with a number, such as `abc`, Mermaid draws an empty flow and Pele shows a syntax error instead. The error names the value it refused, so a pasted CSV header row such as `Source,Target,Value` fails with `Expecting a number, got 'Value'` — remove the header row, since sankey rows need a number in the third column.
 
 Sankey links use gradients, as in Mermaid, only when the diagram has an `idPrefix`, which `mount()` always provides. Without a prefix, links use their source node's color because diagrams on the same page would otherwise share gradient IDs.
 

@@ -397,6 +397,13 @@ Upgraded to Pro,Stayed on Pro,284`;
     }
   });
 
+  it("names the value it refuses, so a header row explains itself (#157)", () => {
+    const header = 'sankey-beta\nSource,Target,Value\nLeads,Qualified,50\n';
+    expect(() => parse(header)).toThrow(expect.objectContaining({ code: 'syntax', line: 2, column: 15 }));
+    expect(() => parse(header)).toThrow(/Expecting a number, got 'Value'/);
+    expect(() => parse('sankey\na,b,abc\n')).toThrow(/Expecting a number, got 'abc'/);
+  });
+
   it('reports the line of an error after blank lines', () => {
     expect(() => parse('sankey\n\na,b,1\n\nb,c,abc')).toThrow(expect.objectContaining({ line: 5, column: 5 }));
     expect(() => parse('sankey\n\na,b,1\n\nb,c,abc')).toThrow(/^Parse error on line 5:\nb,c,abc\n/);
