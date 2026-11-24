@@ -129,6 +129,7 @@ All options are optional.
 | `icons` | `(name: string) => string \| null \| undefined` | Supplies trusted SVG markup for icon names such as `fa:fa-car`. See [Security](/security#app-responsibilities). |
 | `math` | `(tex: string, size: number) => MathMarkup \| null \| undefined` | Typesets `$$...$$` in labels. See [Math](#math). |
 | `config` | `object` | Default Mermaid settings. Frontmatter and directives override them. Support varies by diagram type. |
+| `block` | `{ edgeRouting?: 'straight' \| 'prefer-straight' \| 'orthogonal' }` | How block diagram edges are routed. `'orthogonal'` (default) bends around blocks; `'straight'` joins block outlines directly; `'prefer-straight'` does that unless the line would be too short for its arrowheads or a bend crosses fewer blocks. [`mount()`](#mount) also reads this from the `--pele-block-edge-routing` CSS variable. |
 
 ### RenderResult
 
@@ -185,7 +186,7 @@ diagram.update('flowchart LR\n  A[Draft] --> B[Published]');
 
 `mount()` and `update()` don't throw when the text can't be drawn. The container shows the error instead: over the bottom edge of the last diagram, which is dimmed, or in place of a diagram if none could be drawn yet. Read it from `error`, or handle it with `onError`. Its color is [`--pele-error`](/theming).
 
-Call `refresh()` after changing fonts or moving the container. Resizes and pending web fonts are handled automatically.
+Call `refresh()` after changing fonts, the block edge routing, or moving the container. Resizes and pending web fonts are handled automatically.
 
 Use a container whose width does not depend on the diagram, such as a block element.
 

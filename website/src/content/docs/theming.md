@@ -29,6 +29,7 @@ Switch between light and dark colors without re-rendering the diagram.
 | `--pele-heading-weight` | `bold` | Headings inside a diagram, such as class names and section labels |
 | `--pele-bold-weight` | `bold` | Bold text in labels |
 | `--pele-radius` | `4px` | Corner radius of rounded shapes |
+| `--pele-block-edge-routing` | `orthogonal` | How block diagram edges are routed: `straight`, `prefer-straight`, or `orthogonal`. Read by [`mount()`](/api#mount); see [Block edge routing](#block-edge-routing) |
 
 ### Series colors
 
@@ -108,6 +109,18 @@ To draw part of a diagram in the monospace font, list it in [`monospace`](/api#r
 ```ts
 render(source, { monospace: ['members'] });
 ```
+
+### Block edge routing
+
+Block diagrams bend their edges around other blocks by default. To join block outlines with straight lines instead, set `--pele-block-edge-routing` on an element that contains the diagram:
+
+```css
+.straight-blocks {
+  --pele-block-edge-routing: prefer-straight;
+}
+```
+
+`straight` always joins the outlines directly; `prefer-straight` does that unless the line would be too short for its arrowheads or a bend crosses fewer blocks. `orthogonal` is the default bend. [`mount()`](/api#mount) applies a change to the variable on `refresh()`, without reparsing the diagram. An explicit `block.edgeRouting` option passed to [`render()`](/api#render) or `mount()` takes precedence over the variable.
 
 | Part | Text |
 | --- | --- |

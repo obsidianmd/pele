@@ -12,6 +12,12 @@ export type MathResolver = (tex: string, size: number) => MathMarkup | null | un
 
 export type MonospacePart = 'members' | 'attributes' | 'files' | 'messages';
 
+// How a block diagram routes its edges: 'orthogonal' bends around blocks,
+// 'straight' joins block outlines directly, 'prefer-straight' does that
+// unless the line would be too short for its arrowheads or a bend crosses
+// fewer blocks.
+export type BlockEdgeRouting = 'straight' | 'prefer-straight' | 'orthogonal';
+
 export interface RenderOptions {
   measurer?: TextMeasurer;
   // The fonts labels are measured in, and drawn in where the page sets no --pele-font or
@@ -44,6 +50,11 @@ export interface RenderOptions {
   icons?: IconResolver;
   math?: MathResolver;
   config?: Config;
+  // Block diagrams: how edges are routed. 'orthogonal' (default) bends
+  // around blocks; 'straight' joins block outlines directly;
+  // 'prefer-straight' does that unless the line would be too short for its
+  // arrowheads or a bend crosses fewer blocks.
+  block?: { edgeRouting?: BlockEdgeRouting };
   // The time gantt charts treat as now. Defaults to the current time.
   now?: number | Date;
 }

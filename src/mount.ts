@@ -1,6 +1,6 @@
 import type { DiagramModel } from './models.js';
 import { forgetTextWidths } from './text/measurer.js';
-import type { RenderOptions, RenderResult } from './types.js';
+import type { BlockEdgeRouting, RenderOptions, RenderResult } from './types.js';
 import { room, windowOf } from './window.js';
 import { zoomWith, type Zoom, type ZoomOptions } from './zoom.js';
 
@@ -61,6 +61,14 @@ function fontsFor(style: CSSStyleDeclaration, drawing: HTMLElement | null): Font
     family: own.getPropertyValue('--pele-font').trim() || style.fontFamily || undefined,
     mono: own.getPropertyValue('--pele-font-mono').trim() || undefined,
   };
+}
+
+// The block edge routing CSS gives the diagram, or undefined when it names none.
+// An explicit `block.edgeRouting` option takes precedence over this.
+function routingFor(style: CSSStyleDeclaration, drawing: HTMLElement | null): BlockEdgeRouting | undefined {
+  const own = drawing ? windowOf(drawing).getComputedStyle(drawing) : style;
+  const value = own.getPropertyValue('--pele-block-edge-routing').trim();
+  return value === 'straight' || value === 'prefer-straight' || value === 'orthogonal' ? value : undefined;
 }
 
 // The fonts a diagram is drawn with: those of the element's document, which its CSS names, and
@@ -140,6 +148,7 @@ export function mountWith(engine: Engine, element: HTMLElement, text: string, op
   // Ids in one drawing must not be those of another in the same page.
   const idPrefix = `pele-${copy}-${++mounted}`;
   let fonts: Fonts = {};
+  let routing: BlockEdgeRouting | undefined;
   // Whether the width there is can change how this diagram is drawn. Not known until asked.
   let adapts: boolean | undefined;
   let drawnFor = -1;
@@ -149,11 +158,13 @@ export function mountWith(engine: Engine, element: HTMLElement, text: string, op
 
   const fit = (style: CSSStyleDeclaration, fresh: boolean): RenderResult => {
     const { onRender, onError, sanitize, ...rest } = settings;
+    const edgeRouting = rest.block?.edgeRouting ?? routing;
     const base: RenderOptions = {
       ...rest,
       idPrefix: rest.idPrefix ?? idPrefix,
       fontFamily: rest.fontFamily ?? fonts.family,
       fontFamilyMono: rest.fontFamilyMono ?? fonts.mono,
+      block: edgeRouting === undefined ? rest.block : { ...rest.block, edgeRouting },
       maxWidth: undefined,
     };
     if (fresh) {
@@ -225,11 +236,12 @@ export function mountWith(engine: Engine, element: HTMLElement, text: string, op
   const draw = (fresh: boolean, quiet = !fresh): void => {
     const style = windowOf(element).getComputedStyle(element);
     const drawing = (element.firstElementChild as HTMLElement | null) ?? null;
-    const before = { fonts, natural, adapts, drawnFor, stale };
+    const before = { fonts, routing, natural, adapts, drawnFor, stale };
     let next: RenderResult;
     try {
       if (fresh) {
         fonts = fontsFor(style, drawing);
+        routing = routingFor(style, drawing);
         stale = element.isConnected === false;
       }
       next = fit(style, fresh);
@@ -244,15 +256,17 @@ export function mountWith(engine: Engine, element: HTMLElement, text: string, op
       put(next.svg);
     } catch (failure) {
       // The element is as it was, and so is what it was drawn for.
-      ({ fonts, natural, adapts, drawnFor, stale } = before);
+      ({ fonts, routing, natural, adapts, drawnFor, stale } = before);
       throw failure;
     }
     if (fresh) drawnModel = model;
     if (fresh && !drawing && element.firstElementChild) {
       const seen = fontsFor(style, element.firstElementChild as HTMLElement);
-      if (seen.family !== fonts.family || seen.mono !== fonts.mono) {
-        const first = { fonts, natural, adapts, drawnFor };
+      const seenRouting = routingFor(style, element.firstElementChild as HTMLElement);
+      if (seen.family !== fonts.family || seen.mono !== fonts.mono || seenRouting !== routing) {
+        const first = { fonts, routing, natural, adapts, drawnFor };
         fonts = seen;
+        routing = seenRouting;
         try {
           const second = fit(style, true);
           put(second.svg);
@@ -260,7 +274,7 @@ export function mountWith(engine: Engine, element: HTMLElement, text: string, op
         } catch {
           // What was drawn for the element's own font is in the element, and stays, whether the
           // drawing or the host's sanitizer failed.
-          ({ fonts, natural, adapts, drawnFor } = first);
+          ({ fonts, routing, natural, adapts, drawnFor } = first);
         }
       }
     }
@@ -296,8 +310,9 @@ export function mountWith(engine: Engine, element: HTMLElement, text: string, op
     if (!model || hidden()) return;
     const style = windowOf(element).getComputedStyle(element);
     const now = fontsFor(style, (element.firstElementChild as HTMLElement | null) ?? null);
+    const nowRouting = routingFor(style, (element.firstElementChild as HTMLElement | null) ?? null);
     try {
-      if (stale || now.family !== fonts.family || now.mono !== fonts.mono) {
+      if (stale || now.family !== fonts.family || now.mono !== fonts.mono || nowRouting !== routing) {
         draw(true, true);
       } else if (adapts !== false && settings.maxWidth === undefined) {
         const available = room(element, style);

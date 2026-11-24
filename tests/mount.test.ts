@@ -246,6 +246,47 @@ describe('mount', () => {
     expect(el.innerHTML).toContain('--_fm:var(--pele-font-mono,Menlo)');
   });
 
+  it('takes block edge routing from the variable', () => {
+    // A diagonal edge whose corner is free, so the default bends once.
+    const BLOCK = 'block\n  columns 3\n  a space:2\n  space:3\n  space:2 b\n  a --> b';
+    const { el } = styled({ fontFamily: 'Georgia', vars: { '--pele-block-edge-routing': 'straight' } });
+    const seen: (string | undefined)[] = [];
+    const spy = spying((o) => seen.push(o.block?.edgeRouting));
+    mountWith(spy, el, BLOCK);
+    expect(seen).toEqual(['straight']);
+    expect(/class="pele-edge"[^>]*><path d="M[\d.,]+L[\d.,]+"/.test(el.innerHTML)).toBe(true);
+  });
+
+  it('lets an explicit option beat the routing variable, and ignores an unknown one', () => {
+    const BLOCK = 'block\n  columns 3\n  a space:2\n  space:3\n  space:2 b\n  a --> b';
+    const { el } = styled({ fontFamily: 'Georgia', vars: { '--pele-block-edge-routing': 'straight' } });
+    const seen: (string | undefined)[] = [];
+    const spy = spying((o) => seen.push(o.block?.edgeRouting));
+    mountWith(spy, el, BLOCK, { block: { edgeRouting: 'prefer-straight' } });
+    expect(seen).toEqual(['prefer-straight']);
+    const plain = styled({ fontFamily: 'Georgia', vars: { '--pele-block-edge-routing': 'diagonal' } });
+    const unseen: (string | undefined)[] = [];
+    mountWith(spying((o) => unseen.push(o.block?.edgeRouting)), plain.el, BLOCK);
+    expect(unseen).toEqual([undefined]);
+  });
+
+  it('applies a routing variable change on refresh without reparsing', () => {
+    const BLOCK = 'block\n  columns 3\n  a space:2\n  space:3\n  space:2 b\n  a --> b';
+    const container = { fontFamily: 'Georgia', vars: {} as Record<string, string> };
+    const { el } = styled(container);
+    const seen: (string | undefined)[] = [];
+    let parsed = 0;
+    const spy = spying((o) => seen.push(o.block?.edgeRouting), () => parsed++);
+    const handle = mountWith(spy, el, BLOCK);
+    expect(seen).toEqual([undefined]);
+    expect(/class="pele-edge"[^>]*><path d="M[\d.,]+L[\d.,]+Q/.test(el.innerHTML)).toBe(true);
+    container.vars = { '--pele-block-edge-routing': 'prefer-straight' };
+    handle.refresh();
+    expect(parsed).toBe(1);
+    expect(seen).toEqual([undefined, 'prefer-straight']);
+    expect(/class="pele-edge"[^>]*><path d="M[\d.,]+L[\d.,]+"/.test(el.innerHTML)).toBe(true);
+  });
+
   it('finds a variable that is set on the drawing and not on the element', () => {
     const { el, seen, spy } = styled({ fontFamily: 'Georgia' }, { fontFamily: 'Inter', vars: { '--pele-font': 'Inter' } });
     let renders = 0;
