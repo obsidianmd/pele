@@ -8,7 +8,7 @@ import { drawShape, shapeFilled, shapeInset, shapeSize } from '../../svg/shapes.
 import { classNames, resolveStyle, rounded, setsFill, type ResolvedStyle } from '../../svg/theme.js';
 import { layoutLabel, type Label } from '../../text/label.js';
 import { Style, defaultMeasurer } from '../../text/measurer.js';
-import type { RenderOptions, Rendered } from '../../types.js';
+import type { BlockEdgeRouting, RenderOptions, Rendered } from '../../types.js';
 import { tighten, titleRoom } from '../common/fit-width.js';
 import { OVERHANG, arrowAxis, arrowMask, arrowSize, drawArrow } from './arrows.js';
 import { layout, type Cell } from './layout.js';
@@ -163,8 +163,73 @@ function hits(points: number[], s: View, t: View, obstacles: View[]): number {
   return count;
 }
 
+// A straight line between the outlines. Parallel edges fan out: both ends aim
+// at a point shifted to the same side of the line, so the lines stay parallel
+// instead of crossing.
+function directEdge(s: View, t: View, shift: number): number[] {
+  const dx = t.x - s.x;
+  const dy = t.y - s.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const px = (-dy / len) * shift;
+  const py = (dx / len) * shift;
+  const points: number[] = [];
+  border(s, t.x + px, t.y + py, points);
+  border(t, s.x + px, s.y + py, points);
+  return points;
+}
+
+function directLength(points: number[]): number {
+  return Math.hypot(points[2] - points[0], points[3] - points[1]);
+}
+
+// Length two segments share, when they lie on one line. The legs of a
+// straight edge are diagonal, so a shared stretch is only ever along the
+// same line, never a crossing.
+function collinearOverlap(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number): number {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const cdx = dx - cx;
+  const cdy = dy - cy;
+  const len2 = abx * abx + aby * aby;
+  const cd2 = cdx * cdx + cdy * cdy;
+  if (len2 === 0 || cd2 === 0) return 0;
+  // Parallel, and on the same line: the sine of the angle between them and
+  // the distance of C from AB are both near zero.
+  if (Math.abs(abx * cdy - aby * cdx) > 1e-6 * Math.sqrt(len2 * cd2)) return 0;
+  if (Math.abs((cx - ax) * aby - (cy - ay) * abx) > 1e-6 * Math.sqrt(len2)) return 0;
+  const tc = ((cx - ax) * abx + (cy - ay) * aby) / len2;
+  const td = ((dx - ax) * abx + (dy - ay) * aby) / len2;
+  const lo = Math.max(0, Math.min(tc, td));
+  const hi = Math.min(1, Math.max(tc, td));
+  return Math.max(0, hi - lo) * Math.sqrt(len2);
+}
+
+// Length of a candidate route's legs that run along a leg of another route.
+function sharedLength(points: number[], lines: number[][]): number {
+  let shared = 0;
+  for (let i = 0; i + 3 < points.length; i += 2) {
+    for (const line of lines) {
+      for (let j = 0; j + 3 < line.length; j += 2) {
+        shared += collinearOverlap(points[i], points[i + 1], points[i + 2], points[i + 3], line[j], line[j + 1], line[j + 2], line[j + 3]);
+      }
+    }
+  }
+  return shared;
+}
+
 // A straight line where the two blocks share a row or a column, otherwise one bend between facing sides.
-function routeEdge(s: View, t: View, shift: number, obstacles: View[] | undefined): number[] {
+// `routing` picks the shape: 'straight' joins the outlines directly, 'prefer-straight' does that
+// unless its arrowheads would meet or a bend crosses fewer blocks. `trim` is the two marker
+// lengths, and `shared` measures how much of a candidate bend runs along another connection.
+function routeEdge(
+  s: View,
+  t: View,
+  shift: number,
+  obstacles: View[] | undefined,
+  routing: BlockEdgeRouting,
+  trim: number,
+  shared: (candidate: number[]) => number,
+): number[] {
   const sl = s.x - s.bw / 2;
   const sr = s.x + s.bw / 2;
   const st = s.y - s.bh / 2;
@@ -214,21 +279,35 @@ function routeEdge(s: View, t: View, shift: number, obstacles: View[] | undefine
   const across = [edgeX(s, s.y, right), s.y, t.x, s.y, t.x, edgeY(t, t.x, -down)];
   const along = [s.x, edgeY(s, s.x, down), s.x, t.y, edgeX(t, t.y, -right), t.y];
   const wide = Math.abs(t.x - s.x) >= Math.abs(t.y - s.y);
-  let best = wide ? across : along;
-  if (obstacles === undefined) return best;
-  let least = hits(best, s, t, obstacles);
-  if (least === 0) return best;
-  const other = wide ? along : across;
-  const count = hits(other, s, t, obstacles);
-  if (count < least) {
-    best = other;
-    least = count;
+  const first = wide ? across : along;
+  const second = wide ? along : across;
+  if (routing === 'straight') return directEdge(s, t, shift);
+  if (obstacles === undefined) {
+    if (routing === 'prefer-straight') {
+      const direct = directEdge(s, t, shift);
+      if (directLength(direct) > trim) return direct;
+    }
+    return first;
   }
+  const firstHits = hits(first, s, t, obstacles);
+  const secondHits = hits(second, s, t, obstacles);
+  if (routing === 'prefer-straight') {
+    // Direct, unless its arrowheads would meet or a bend crosses fewer blocks.
+    const direct = directEdge(s, t, shift);
+    if (directLength(direct) > trim && hits(direct, s, t, obstacles) <= Math.min(firstHits, secondHits)) return direct;
+  }
+  let best = firstHits <= secondHits ? first : second;
+  const least = Math.min(firstHits, secondHits);
+  // Equally clear bends: prefer the one sharing less line with other connections.
+  if (routing === 'prefer-straight' && firstHits === secondHits && shared(second) < shared(first)) best = second;
   if (least === 0) return best;
-  const direct: number[] = [];
-  border(s, t.x, t.y, direct);
-  border(t, s.x, s.y, direct);
-  return hits(direct, s, t, obstacles) < least ? direct : best;
+  const fallback = directEdge(s, t, 0);
+  if (hits(fallback, s, t, obstacles) < least) {
+    // A bend was chosen over the direct line, so a short direct line stays a bend.
+    if (routing === 'prefer-straight' && directLength(fallback) <= trim) return best;
+    return fallback;
+  }
+  return best;
 }
 
 // Builds the path through two or three points, rounding the bend and leaving room for markers.
@@ -338,18 +417,34 @@ function labelSpot(p: number[], at: number, w: number, h: number, s: View, t: Vi
 // Stacks overlapping labels along their shared line, if they fit between its markers and cover no other block or title.
 // Returns the extra length needed to fit the labels.
 function stackLabels(stack: number[], routes: Route[], legs: number[][], s: View, t: View, obstacles: Box[] | undefined): number {
-  const vertical = legs[stack[0]][0] === legs[stack[0]][2];
+  const first = legs[stack[0]];
+  const dx = first[2] - first[0];
+  const dy = first[3] - first[1];
+  const vertical = dx === 0;
+  const diagonal = dx !== 0 && dy !== 0;
+  // A diagonal leg is measured along its own direction: labels clear each
+  // other sideways or up and down, whichever is sooner.
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const sizeOf = (label: Label): number =>
+    diagonal ? Math.min((label.width + 8) / Math.abs(ux), label.height / Math.abs(uy)) : vertical ? label.height : label.width + 8;
   let lo = -Infinity;
   let hi = Infinity;
   let need = -LABEL_GAP;
   let crowded = false;
   for (let a = 0; a < stack.length; a++) {
     const leg = legs[stack[a]];
-    if (vertical ? leg[0] !== leg[2] : leg[1] !== leg[3]) return 0;
-    lo = Math.max(lo, vertical ? Math.min(leg[1], leg[3]) : Math.min(leg[0], leg[2]));
-    hi = Math.min(hi, vertical ? Math.max(leg[1], leg[3]) : Math.max(leg[0], leg[2]));
+    const ldx = leg[2] - leg[0];
+    const ldy = leg[3] - leg[1];
+    // A stack of legs that run in different directions cannot be stacked.
+    if (vertical ? ldx !== 0 : diagonal ? ldx === 0 || ldy === 0 || Math.abs(ldx * uy - ldy * ux) > 1e-6 * Math.hypot(ldx, ldy) : ldy !== 0) return 0;
+    const at0 = diagonal ? leg[0] * ux + leg[1] * uy : vertical ? leg[1] : leg[0];
+    const at1 = diagonal ? leg[2] * ux + leg[3] * uy : vertical ? leg[3] : leg[2];
+    lo = Math.max(lo, Math.min(at0, at1));
+    hi = Math.min(hi, Math.max(at0, at1));
     const p = routes[stack[a]];
-    need += (vertical ? p.label.height : p.label.width + 8) + LABEL_GAP;
+    need += sizeOf(p.label) + LABEL_GAP;
     for (let b = 0; b < a; b++) {
       const q = routes[stack[b]];
       if (Math.abs(p.lx - q.lx) < (p.label.width + q.label.width) / 2 + 8 && Math.abs(p.ly - q.ly) < (p.label.height + q.label.height) / 2) crowded = true;
@@ -357,19 +452,33 @@ function stackLabels(stack: number[], routes: Route[], legs: number[][], s: View
   }
   if (!crowded) return 0;
   if (need > hi - lo - 2 * ARROW) return need - (hi - lo - 2 * ARROW);
-  const along: number[] = [];
+  const placed: [number, number][] = [];
   let next = (lo + hi - need) / 2;
   for (const i of stack) {
     const { label, lx, ly } = routes[i];
-    const size = vertical ? label.height : label.width + 8;
+    const size = sizeOf(label);
     const at = next + size / 2;
-    if (covers(vertical ? lx : at, vertical ? at : ly, label.width + 8, label.height, s, t, obstacles)) return 0;
-    along.push(at);
+    let x: number;
+    let y: number;
+    if (diagonal) {
+      const leg = legs[i];
+      const start = leg[0] * ux + leg[1] * uy;
+      x = leg[0] + ux * (at - start);
+      y = leg[1] + uy * (at - start);
+    } else if (vertical) {
+      x = lx;
+      y = at;
+    } else {
+      x = at;
+      y = ly;
+    }
+    if (covers(x, y, label.width + 8, label.height, s, t, obstacles)) return 0;
+    placed.push([x, y]);
     next += size + LABEL_GAP;
   }
   stack.forEach((i, k) => {
-    if (vertical) routes[i].ly = along[k];
-    else routes[i].lx = along[k];
+    routes[i].lx = placed[k][0];
+    routes[i].ly = placed[k][1];
   });
   return 0;
 }
@@ -418,6 +527,7 @@ function draw(model: BlockModel, config: Config, options: RenderOptions, tight: 
   const configured = (config.block as Config | undefined)?.padding;
   const gap = Math.min(typeof configured === 'number' && configured >= 0 ? Math.min(configured, 200) : GAP, tight ? 6 : Infinity);
   const wrap = tight ? 80 : WRAP;
+  const routing: BlockEdgeRouting = options.block?.edgeRouting ?? 'orthogonal';
 
   const styleOf = (block: Block): ResolvedStyle => {
     const declarations: string[] = [];
@@ -578,6 +688,21 @@ function draw(model: BlockModel, config: Config, options: RenderOptions, tight: 
     const seen = new Map<number, number>();
     routes.length = 0;
     stacks.clear();
+    // The direct line of every edge, so a bend can be chosen against connections
+    // declared later in the source as well as earlier ones.
+    const directs: number[][] = [];
+    for (let i = 0; i < drawn.length; i++) {
+      const [s, t] = ends[i];
+      directs.push(s === t ? [] : directEdge(s, t, 0));
+    }
+    // How much of a candidate bend runs along another connection: the bends
+    // already chosen, and the direct line of every other edge.
+    const shared = (at: number, candidate: number[]): number => {
+      const lines: number[][] = [];
+      for (const r of routes) if (r.points.length > 0) lines.push(r.points);
+      for (let j = 0; j < directs.length; j++) if (j !== at && directs[j].length > 0) lines.push(directs[j]);
+      return sharedLength(candidate, lines);
+    };
     for (let i = 0; i < drawn.length; i++) {
       const [s, t] = ends[i];
       const key = Math.min(s.index, t.index) * order.length + Math.max(s.index, t.index);
@@ -595,7 +720,8 @@ function draw(model: BlockModel, config: Config, options: RenderOptions, tight: 
         ly = py - r / 2;
       } else {
         const step = labelled.has(key) ? Math.round(edgeSize * 1.5) + 2 : 14;
-        points = routeEdge(s, t, (k - (total - 1) / 2) * step, check);
+        const trim = markerTrim(drawn[i].arrowTypeStart ?? '') + markerTrim(drawn[i].arrowTypeEnd ?? '');
+        points = routeEdge(s, t, (k - (total - 1) / 2) * step, check, routing, trim, (candidate) => shared(i, candidate));
         const n = points.length;
         // The label goes on the longer leg.
         const firstLeg = Math.abs(points[2] - points[0]) + Math.abs(points[3] - points[1]);

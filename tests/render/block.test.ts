@@ -552,3 +552,96 @@ describe('block rendering', () => {
     expect(model.blocks.map((b) => b.id)).toEqual(['a', 'id-1-0', 'id-1-1', 'id-2']);
   });
 });
+
+describe('block edge routing', () => {
+  // A diagonal edge whose corner is free, so the default bends once.
+  const corner = 'block\n  columns 3\n  a space:2\n  space:3\n  space:2 b\n  a --> b';
+  const straight = { ...options, block: { edgeRouting: 'straight' as const } };
+  const adaptive = { ...options, block: { edgeRouting: 'prefer-straight' as const } };
+
+  // Whether a path is one straight segment, and where its ends sit.
+  const segment = (d: string): [number, number, number, number] => {
+    const m = /^M([\d.]+),([\d.]+)L([\d.]+),([\d.]+)$/.exec(d);
+    if (!m) throw new Error(`not one segment: ${d}`);
+    return m.slice(1).map(Number) as [number, number, number, number];
+  };
+
+  it('joins diagonal outlines directly with straight routing', () => {
+    expect(paths(render(corner, options).svg)[0]).toMatch(/Q/);
+    const { svg } = render(corner, straight);
+    const [x1, y1, x2, y2] = segment(paths(svg)[0]);
+    expect(x1).toBeLessThan(x2);
+    expect(y1).toBeLessThan(y2);
+    // Each end sits on its block's outline.
+    const at = boxes(svg);
+    const a = at.get('a')!;
+    const b = at.get('b')!;
+    expect(Math.min(Math.abs(x1 - (a.x - a.w / 2)), Math.abs(x1 - (a.x + a.w / 2)), Math.abs(y1 - (a.y - a.h / 2)), Math.abs(y1 - (a.y + a.h / 2)))).toBeLessThan(1);
+    // The drawn line stops 7px short of the outline for its arrowhead
+    // (ARROW - 1), so extend it back out to check the far end.
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    const ex = x2 + (7 * (x2 - x1)) / len;
+    const ey = y2 + (7 * (y2 - y1)) / len;
+    expect(Math.min(Math.abs(ex - (b.x - b.w / 2)), Math.abs(ex - (b.x + b.w / 2)), Math.abs(ey - (b.y - b.h / 2)), Math.abs(ey - (b.y + b.h / 2)))).toBeLessThan(1);
+  });
+
+  it('draws the direct line with prefer-straight when the corner is free', () => {
+    expect(paths(render(corner, adaptive).svg)[0]).toMatch(/^M[\d.,]+L[\d.,]+$/);
+    expect(render(corner, adaptive).svg).toBe(render(corner, straight).svg);
+  });
+
+  it('bends with prefer-straight when a block sits on the direct line', () => {
+    const src = 'block\n  columns 3\n  a space space\n  space x space\n  space space b\n  a --> b';
+    expect(paths(render(src, adaptive).svg)[0]).toMatch(/Q/);
+    expect(paths(render(src, straight).svg)[0]).toMatch(/^M[\d.,]+L[\d.,]+$/);
+  });
+
+  it('bends with prefer-straight when the line is too short for its arrowheads', () => {
+    const src = 'block\n  columns 2\n  a b\n  c d\n  a <--> d';
+    // The blocks stand 12px apart, so the direct line is long enough; squeezed
+    // to a 6px gap it is shorter than the two arrowheads.
+    expect(paths(render(src, adaptive).svg)[0]).toMatch(/^M[\d.,]+L[\d.,]+$/);
+    const squeezed = { ...adaptive, maxWidth: 120 };
+    expect(paths(render(src, squeezed).svg)[0]).toMatch(/Q/);
+    expect(paths(render(src, { ...straight, maxWidth: 120 }).svg)[0]).toMatch(/^M[\d.,]+L[\d.,]+$/);
+  });
+
+  it('keeps self-loops as loops under straight routing', () => {
+    const { svg } = render('block\n  a\n  a --> a', straight);
+    expect(paths(svg)[0]).toMatch(/^M[\d.,]+A\d+,\d+ 0 1 1 [\d.,]+$/);
+  });
+
+  it('spreads parallel straight edges and keeps their labels separate', () => {
+    const src = 'block\n  columns 3\n  a space:2\n  space:3\n  space:2 b\n  a -- "first label" --> b\n  b -- "second label" --> a';
+    for (const opts of [straight, adaptive]) {
+      const { svg } = render(src, opts);
+      const [first, second] = paths(svg);
+      expect(segment(first)).not.toEqual(segment(second));
+      const labels = labelBoxes(svg);
+      expect(labels).toHaveLength(2);
+      const [one, two] = labels;
+      expect(Math.abs(one.x - two.x) >= (one.w + two.w) / 2 || Math.abs(one.y - two.y) >= (one.h + two.h) / 2).toBe(true);
+    }
+  });
+
+  it('picks the bend that shares less line with other connections', () => {
+    // Both bends cross two blocks and the direct line crosses three, so the
+    // choice is between the bends. The row-0 bend runs along the a --> z
+    // line; the column-0 bend shares nothing with it.
+    const grid = 'block\n  columns 5\n  a b space space z\n  p q space space space\n  space space r space space\n  space space space s space\n  space w space space d';
+    const across = /^M([\d.]+),([\d.]+)L([\d.]+),\2Q/;
+    const along = /^M([\d.]+),([\d.]+)L\1,([\d.]+)Q/;
+    expect(paths(render(`${grid}\n  a --> d`, adaptive).svg)[0]).toMatch(across);
+    // Whether the straight connection is declared before or after the bend,
+    // the bend avoids sharing a stretch with it.
+    expect(paths(render(`${grid}\n  a --> d\n  a --> z`, adaptive).svg)[0]).toMatch(along);
+    expect(paths(render(`${grid}\n  a --> z\n  a --> d`, adaptive).svg)[1]).toMatch(along);
+  });
+
+  it('keeps orthogonal routing by default and for unknown values', () => {
+    const explicit = render(corner, { ...options, block: { edgeRouting: 'orthogonal' as const } });
+    expect(explicit.svg).toBe(render(corner, options).svg);
+    const unknown = render(corner, { ...options, block: { edgeRouting: 'diagonal' as 'straight' } });
+    expect(unknown.svg).toBe(render(corner, options).svg);
+  });
+});
