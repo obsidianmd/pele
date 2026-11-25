@@ -11,6 +11,22 @@ export interface ZoomOptions {
   controls?: boolean;
   // What the buttons are called, for a page that is not in English.
   labels?: { zoomIn?: string; zoomOut?: string; reset?: string };
+  // What a resize of the element does to an enlarged drawing: returns it to rest, or keeps
+  // the view it shows. 'reset' by default.
+  resize?: 'reset' | 'keep';
+  // Whether the wheel zooms on its own, or only with Ctrl or ⌘ held. 'modifier' by default.
+  wheel?: 'modifier' | 'always';
+  // Which mouse buttons drag an enlarged drawing, by button number. [0] by default: the
+  // primary button. A host that pans with another button leaves the text selectable.
+  panButtons?: number[];
+}
+
+// The part of a drawing shown: its scale, and the top-left corner of the part shown, in
+// drawing units.
+export interface ZoomView {
+  scale: number;
+  x: number;
+  y: number;
 }
 
 export interface Zoom {
@@ -18,6 +34,10 @@ export interface Zoom {
   readonly scale: number;
   // The scale at which all of it shows, which is where it rests.
   readonly fit: number;
+  // The part of the drawing shown: its scale, and its top-left corner in drawing units.
+  readonly view: ZoomView;
+  // Shows a view a host saved. A scale at or below the fit scale returns it to rest.
+  setView(view: { scale: number; x?: number; y?: number }): void;
   zoomBy(factor: number): void;
   zoomTo(scale: number): void;
   reset(): void;
@@ -100,6 +120,9 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
   const fit = (): number => (natural.width > 0 && rest.width > 0 ? rest.width / natural.width : 1);
   const most = (): number => Math.max(fit(), options.maxScale ?? 3);
   const zoomable = (): boolean => svg !== null && natural.width > 0 && (options.always === true || fit() < 0.999);
+  // Unknown values fall back to the defaults, as elsewhere.
+  const panButtons = options.panButtons ?? [0];
+  const primaryPans = panButtons.includes(0);
 
   const measure = (): void => {
     if (!svg || scale !== 0) return;
@@ -178,6 +201,8 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
     if (!svg) return;
     restore();
     scale = 0;
+    x = 0;
+    y = 0;
     svg.setAttribute('viewBox', `0 0 ${natural.width} ${natural.height}`);
     svg.style.cursor = '';
     svg.style.userSelect = '';
@@ -223,6 +248,25 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
     cleared = null;
   };
 
+  // Puts the drawing into its enlarged state at a scale: the box, margins and styles an
+  // enlarged drawing needs. Returns the box it then occupies.
+  const enter = (to: number): { left: number; top: number; width: number; height: number } => {
+    if (!svg) return { left: 0, top: 0, width: 0, height: 0 };
+    scale = to;
+    let after = svg.getBoundingClientRect();
+    if (roomy) {
+      svg.style.maxWidth = 'none';
+      svg.style.margin = bleed;
+      // An inline drawing sits on a line of text, with room under it for descenders. That room
+      // is part of the box, so left in place it would make the element taller.
+      svg.style.display = 'block';
+      svg.style.width = `${box.width}px`;
+      svg.style.height = `${box.height}px`;
+      after = svg.getBoundingClientRect();
+    }
+    return after;
+  };
+
   // Shows the drawing at a scale, keeping the point under (clientX, clientY) where it is.
   const show = (next: number, clientX?: number, clientY?: number): void => {
     if (!svg) return;
@@ -239,21 +283,30 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
     const atY = clientY ?? before.top + before.height / 2;
     const pointX = (scale ? x : 0) + (atX - before.left) / from;
     const pointY = (scale ? y : 0) + (atY - before.top) / from;
-    scale = to;
-    let after = before;
-    if (roomy) {
-      svg.style.maxWidth = 'none';
-      svg.style.margin = bleed;
-      // An inline drawing sits on a line of text, with room under it for descenders. That room
-      // is part of the box, so left in place it would make the element taller.
-      svg.style.display = 'block';
-      svg.style.width = `${box.width}px`;
-      svg.style.height = `${box.height}px`;
-      after = svg.getBoundingClientRect();
-    }
+    const after = enter(to);
     place(pointX - (atX - after.left) / scale, pointY - (atY - after.top) / scale);
     svg.style.cursor = 'grab';
-    svg.style.userSelect = 'none';
+    // Text stays selectable when the primary button does not pan.
+    if (primaryPans) svg.style.userSelect = 'none';
+    svg.style.touchAction = 'none';
+    offer();
+  };
+
+  // Shows the view a host saved: the scale, and the top-left corner of the part shown, in
+  // drawing units.
+  const setView = (next: { scale: number; x?: number; y?: number }): void => {
+    if (!svg) return;
+    if (scale === 0) measure();
+    if (!zoomable()) return;
+    const to = Math.min(Math.max(next.scale, fit()), most());
+    if (to <= fit() * 1.001) {
+      settle();
+      return;
+    }
+    enter(to);
+    place(next.x ?? 0, next.y ?? 0);
+    svg.style.cursor = 'grab';
+    if (primaryPans) svg.style.userSelect = 'none';
     svg.style.touchAction = 'none';
     offer();
   };
@@ -275,6 +328,12 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
     const size = element.clientWidth + element.clientHeight;
     if (size === watched) return;
     watched = size;
+    if (options.resize === 'keep' && scale !== 0) {
+      const kept = { scale, x, y };
+      settle();
+      setView(kept);
+      return;
+    }
     settle();
   };
   let observer: ResizeObserver | undefined;
@@ -322,7 +381,7 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
   };
 
   const onPointerDown = (event: PointerEvent): void => {
-    if (!zoomable() || ours(event) || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    if (!zoomable() || ours(event) || (event.pointerType === 'mouse' && !panButtons.includes(event.button))) return;
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     travelled = 0;
     if (pointers.size === 2) pinch = spread().distance;
@@ -366,8 +425,8 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
   };
 
   const onWheel = (event: WheelEvent): void => {
-    // Without the key, the wheel is the page's. With it, the browser would zoom the whole page.
-    if (!(event.ctrlKey || event.metaKey) || !zoomable()) return;
+    // Without the key, the wheel is the page's, unless the host gave it to the drawing.
+    if (!(options.wheel === 'always' || event.ctrlKey || event.metaKey) || !zoomable()) return;
     event.preventDefault();
     if (scale === 0) measure();
     // A notch of a mouse wheel is a hundred or more. A pinch on a trackpad sends many small ones.
@@ -469,6 +528,10 @@ export function zoomWith(element: HTMLElement, options: ZoomOptions, observe: bo
     get fit() {
       return fit();
     },
+    get view() {
+      return { scale: scale || fit(), x, y };
+    },
+    setView,
     zoomBy(factor) {
       show((scale || fit()) * factor);
     },

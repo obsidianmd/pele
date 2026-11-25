@@ -225,7 +225,15 @@ mount(container, source, { zoom: false });
 | Double-click | Zoom in, or reset |
 | `+` `-` `0` and arrow keys | Zoom, reset, and pan when the diagram has focus |
 
-The wheel without a modifier key scrolls the page.
+The wheel without a modifier key scrolls the page, unless `wheel: 'always'` is set. A host that keeps a diagram across re-renders can save its view and put it back:
+
+```ts
+const view = zoom.view;
+zoom.refresh();
+zoom.setView(view);
+```
+
+A resize returns an enlarged diagram to rest, unless `resize: 'keep'` is set.
 
 Use `enableZoom()` to add zoom to an existing diagram:
 
@@ -246,11 +254,16 @@ const zoom = enableZoom(container);
 | `maxScale` | `number` | Largest scale, where `1` is the diagram's natural size. Defaults to `3`. |
 | `controls` | `boolean` | Shows the zoom buttons. Defaults to `true`. |
 | `labels` | `{ zoomIn?, zoomOut?, reset? }` | Accessible names of the buttons. Defaults to English. |
+| `resize` | `'reset' \| 'keep'` | What a resize does to an enlarged diagram. Defaults to `'reset'`. |
+| `wheel` | `'modifier' \| 'always'` | Whether the wheel zooms on its own, or only with `Ctrl`/`⌘` held. Defaults to `'modifier'`. |
+| `panButtons` | `number[]` | Which mouse buttons drag an enlarged diagram, by button number. Defaults to `[0]`. |
 
 | Member | Description |
 | --- | --- |
 | `scale` | Current scale, where `1` is the diagram's natural size. |
 | `fit` | Scale at which the whole diagram is shown. |
+| `view` | The part shown: its scale, and its top-left corner in drawing units. |
+| `setView(view)` | Shows a saved view. A scale at or below `fit` returns to rest. |
 | `zoomBy(factor)` | Multiplies the scale. |
 | `zoomTo(scale)` | Sets the scale. |
 | `reset()` | Returns to the scale that fits. |
