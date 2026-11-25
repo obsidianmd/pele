@@ -5,6 +5,7 @@ import { withIcons } from './text/icons.js';
 import { withMath } from './text/math.js';
 import { cleanupComments, encodeEntities, normalizeLineBreaks, preprocess, type Config } from './preprocess.js';
 import type { DiagramModel } from './models.js';
+import { withLayout } from './layouts.js';
 import { palette, withPalette } from './svg/palette.js';
 import { mountWith, type MountOptions, type Mounted } from './mount.js';
 import type { Diagram, RenderOptions, RenderResult } from './types.js';
@@ -19,6 +20,8 @@ export type { MountOptions, Mounted } from './mount.js';
 export { forgetTextWidths } from './text/measurer.js';
 export { enableZoom } from './zoom.js';
 export type { Zoom, ZoomOptions } from './zoom.js';
+export { registerLayout } from './layouts.js';
+export type { Layout, LayoutContext, LayoutEdge, LayoutNode } from './layouts.js';
 
 const diagrams = new Map<DiagramType, Diagram<unknown>>();
 
@@ -172,7 +175,9 @@ export function render(source: string | DiagramModel, options: RenderOptions = {
     const rendered = tagErrors({ type, mermaidType }, () =>
       withPalette(palette(type, config), () =>
         withMath(diagram.math ? options.math : undefined, () =>
-          withIcons(icons, () => diagram.render(model, config, { ...options, responsive, icons }))
+          withIcons(icons, () =>
+            withLayout(type, config, () => diagram.render(model, config, { ...options, responsive, icons }))
+          )
         )
       )
     );

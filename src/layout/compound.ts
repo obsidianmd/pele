@@ -31,7 +31,9 @@ export interface CEdge {
   minlen: number;
   labelW: number;
   labelH: number;
-  // x, y, axis triples; axis is 0 where the edge runs vertically into the point, 1 horizontally.
+  // x, y, axis triples. The axis is the direction the edge runs as it reaches the point: 0 for
+  // vertical, 1 for horizontal. 2 gives no direction, so the edge runs straight from the point
+  // before.
   route: number[];
   labelX: number;
   labelY: number;

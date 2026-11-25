@@ -320,6 +320,47 @@ supports('sequenceDiagram\n  A->>B: Hi');    // true
 supports('Hello');                         // false
 ```
 
+## registerLayout
+
+```ts
+function registerLayout(name: string, layout: Layout): void
+```
+
+Adds a layout, as Mermaid's `registerLayoutLoaders()` does. A diagram whose config sets `layout` to `name` uses it. This works for flowchart, state, class, ER, requirement, use case and agentflow diagrams.
+
+```ts
+import { registerLayout, render } from 'pele';
+
+registerLayout('row', (nodes, edges) => {
+  nodes.forEach((node, i) => {
+    node.x = node.w / 2 + i * 120;
+    node.y = 40;
+  });
+  for (const edge of edges) {
+    const a = nodes[edge.src];
+    const b = nodes[edge.dst];
+    edge.route = [a.x + a.w / 2, a.y, 1, b.x - b.w / 2, b.y, 1];
+    edge.labelX = (a.x + b.x) / 2;
+    edge.labelY = 40;
+  }
+  return { width: nodes.length * 120, height: 80 };
+});
+
+render('---\nconfig:\n  layout: row\n---\nflowchart LR\n  A --> B --> C');
+```
+
+Pele measures each node's `w` and `h`, and each edge's `labelW` and `labelH`. `node.parent` is the index of the node's group, or `-1`. A group has `isGroup` set, and keeps `padX`, `padTop` and `padBottom` around its members.
+
+The layout sets:
+
+- `node.x`, `node.y`: the center of each node, and `w`, `h` for each group.
+- `edge.route`: points from the source's edge to the target's, as `x, y, axis` triples. The axis is the direction the edge runs as it reaches the point: `0` for vertical, `1` for horizontal. Pele curves the edge to arrive that way. `2` gives no direction, so the edge runs straight from the point before. Use it to draw a curve as many short lines.
+- `edge.labelX`, `edge.labelY`: the center of the edge label.
+
+It returns `{ width, height }`, the size of the drawing. Pele then draws the diagram, with self-loops beside their node.
+
+The `context` argument holds the diagram's `type`, `direction`, `nodeSpacing`, `rankSpacing` and `config`, and `fallback()`, which places the diagram with Pele's own layout. A layout must be synchronous and deterministic, and must not use the DOM.
+
 ## PeleError
 
 Catch `PeleError` to handle parsing and rendering failures. It extends `Error`.
