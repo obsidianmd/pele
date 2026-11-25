@@ -17,7 +17,7 @@ export type { Diagram } from './types.js';
 export type { MountOptions, Mounted } from './mount.js';
 export { forgetTextWidths } from './text/measurer.js';
 export { enableZoom } from './zoom.js';
-export type { Zoom, ZoomOptions } from './zoom.js';
+export type { Zoom, ZoomOptions, ZoomView } from './zoom.js';
 
 const diagrams = new Map<DiagramType, Diagram<unknown>>();
 

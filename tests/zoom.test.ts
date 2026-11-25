@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { enableZoom, frame } from '../src/zoom.js';
+import { enableZoom, frame, zoomWith } from '../src/zoom.js';
 
 // A drawing 1200 by 300, shrunk to fit a box 400 wide.
 const natural = { width: 1200, height: 300 };
@@ -246,6 +246,78 @@ describe('zoom', () => {
     pinch(shrunk);
     click(shrunk, reset, 0);
     expect(zoom.scale).toBe(zoom.fit);
+  });
+
+  it('lets a host save and restore the view', () => {
+    const shrunk = drawingIn(400);
+    const zoom = enableZoom(shrunk.element, { controls: false });
+    expect(zoom.view).toEqual({ scale: zoom.fit, x: 0, y: 0 });
+    zoom.zoomTo(2);
+    expect(zoom.view.scale).toBe(2);
+    expect((shrunk.svg.style as { userSelect?: string }).userSelect).toBe('none');
+    zoom.setView({ scale: 1, x: 100, y: 50 });
+    expect(zoom.view).toEqual({ scale: 1, x: 100, y: 50 });
+    // A view at or below the fit scale returns the drawing to rest.
+    zoom.setView({ scale: zoom.fit });
+    expect(zoom.view).toEqual({ scale: zoom.fit, x: 0, y: 0 });
+    // A saved view survives a refresh, once the host puts it back.
+    zoom.zoomTo(2);
+    const saved = zoom.view;
+    zoom.refresh();
+    expect(zoom.view.scale).toBe(zoom.fit);
+    zoom.setView(saved);
+    expect(zoom.view).toEqual(saved);
+  });
+
+  it('keeps the view across a resize when asked, and resets it otherwise', () => {
+    const kept = drawingIn(400);
+    const zoom = zoomWith(kept.element, { controls: false, resize: 'keep' }, false);
+    zoom.setView({ scale: 2, x: 100, y: 50 });
+    kept.show(600);
+    zoom.resized();
+    expect(zoom.view).toEqual({ scale: 2, x: 100, y: 50 });
+
+    const reset = drawingIn(400);
+    const plain = zoomWith(reset.element, { controls: false }, false);
+    plain.setView({ scale: 2, x: 100, y: 50 });
+    reset.show(600);
+    plain.resized();
+    expect(plain.view).toEqual({ scale: plain.fit, x: 0, y: 0 });
+  });
+
+  it('zooms on the wheel alone only when the host asks for it', () => {
+    const roll = (drawing: ReturnType<typeof drawingIn>, ctrlKey: boolean) =>
+      drawing.fire('wheel', { ctrlKey, metaKey: false, deltaY: -100, preventDefault: () => {} });
+    const plain = drawingIn(400);
+    const zoom = enableZoom(plain.element, { controls: false });
+    roll(plain, false);
+    expect(zoom.scale).toBe(zoom.fit);
+    roll(plain, true);
+    expect(zoom.scale).toBeGreaterThan(zoom.fit);
+
+    const free = drawingIn(400);
+    const zoomed = enableZoom(free.element, { controls: false, wheel: 'always' });
+    roll(free, false);
+    expect(zoomed.scale).toBeGreaterThan(zoomed.fit);
+  });
+
+  it('pans with the buttons the host chooses, and leaves text selectable otherwise', () => {
+    const middle = drawingIn(400);
+    const zoom = enableZoom(middle.element, { controls: false, panButtons: [1] });
+    zoom.zoomTo(2);
+    // Text stays selectable while zoomed: the primary button does not pan.
+    expect((middle.svg.style as { userSelect?: string }).userSelect ?? '').toBe('');
+    // zoomTo centres the view, so the drawing starts halfway across.
+    expect(zoom.view.x).toBe(500);
+    middle.fire('pointerdown', { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 100, clientY: 50 });
+    middle.fire('pointermove', { pointerId: 1, clientX: 70, clientY: 50 });
+    middle.fire('pointerup', { pointerId: 1 });
+    expect(zoom.view.x).toBe(500);
+    // A middle-button drag pans.
+    middle.fire('pointerdown', { pointerId: 2, pointerType: 'mouse', button: 1, clientX: 100, clientY: 50 });
+    middle.fire('pointermove', { pointerId: 2, clientX: 70, clientY: 50 });
+    middle.fire('pointerup', { pointerId: 2 });
+    expect(zoom.view.x).toBe(515);
   });
 
   it('stops the click that ends a drag over the drawing, and no click after it', () => {
