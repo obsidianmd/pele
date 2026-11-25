@@ -1,4 +1,5 @@
-import { cnode, compoundLayout, direction, shiftLayout, type CEdge, type CNode } from '../../layout/compound.js';
+import { cnode, direction, shiftLayout, type CEdge, type CNode } from '../../layout/compound.js';
+import { placeGraph } from '../../layout/place.js';
 import { titleLabel } from '../../svg/title.js';
 import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num, sharedStyle, spanStyle, textStyle, type IconResolver } from '../../svg/builder.js';
@@ -282,7 +283,7 @@ function draw(db: ErDb, config: Config, options: RenderOptions, turned: boolean)
     cnodes[i].parent = node.parentId !== undefined ? (index.get(node.parentId) ?? -1) : -1;
   });
 
-  const layout = compoundLayout(cnodes, cedges, turned ? 'TB' : direction(db.direction), {
+  const layout = placeGraph(cnodes, cedges, turned ? 'TB' : direction(db.direction), {
     nodeSep: numberOption(config, 'nodeSpacing', NODE_SEP),
     edgeSep: EDGE_SEP,
     rankSep: numberOption(config, 'rankSpacing', RANK_SEP),

@@ -43,6 +43,11 @@ export function sideReach(): { add(node: number, side: number, type: string): vo
   };
 }
 
+// A route point with no axis to arrive along. Pele curves an edge to arrive along its axis, so
+// without one the edge reaches the point in a straight line. A layout can then draw a curve of
+// its own as short lines.
+const DIRECT = 2;
+
 // Builds the path for a route of x, y, axis triples, trimming both ends to leave room for markers.
 // Between two points that are not in line, a route is one S that leaves and arrives along the
 // flow, or a step in a stepped route. Where the route itself turns a corner, a stepped route
@@ -64,13 +69,14 @@ export function routePath(
   const ys: number[] = [];
   const axes: number[] = [];
   const near = (ax: number, ay: number, bx: number, by: number): boolean => Math.abs(ax - bx) < 0.01 && Math.abs(ay - by) < 0.01;
+  const direct = (axis: number): boolean => axis === DIRECT;
   for (let i = 0; i < route.length; i += 3) {
     const x = route[i];
     const y = route[i + 1];
     const axis = route[i + 2];
     const last = xs.length - 1;
     // A stepped route turns at right angles where a smooth one would curve.
-    if (stepped && last >= 0 && Math.abs(x - xs[last]) >= 0.01 && Math.abs(y - ys[last]) >= 0.01) {
+    if (stepped && !direct(axis) && last >= 0 && Math.abs(x - xs[last]) >= 0.01 && Math.abs(y - ys[last]) >= 0.01) {
       const px = xs[last];
       const py = ys[last];
       const my = curve === 'stepBefore' ? py : curve === 'stepAfter' ? y : (py + y) / 2;
@@ -89,7 +95,7 @@ export function routePath(
   }
   let last = xs.length - 1;
   const aligned = (i: number): boolean => Math.abs(xs[i] - xs[i - 1]) < 0.01 || Math.abs(ys[i] - ys[i - 1]) < 0.01;
-  const straight = (i: number): boolean => linear || aligned(i);
+  const straight = (i: number): boolean => linear || direct(axes[i]) || aligned(i);
   // The way the route heads from point i to point j: along the flow where an S joins them.
   const unit = (i: number, j: number, axis: number): [number, number] => {
     if (!straight(Math.max(i, j))) return axis === 0 ? [0, Math.sign(ys[j] - ys[i]) || 1] : [Math.sign(xs[j] - xs[i]) || 1, 0];
@@ -111,7 +117,7 @@ export function routePath(
   const length = (i: number): number => Math.abs(xs[i] - xs[i - 1]) + Math.abs(ys[i] - ys[i - 1]);
   // Whether the route turns a corner at point i, from running one way to running the other.
   const turns = (i: number): boolean =>
-    !linear && i > 0 && i < last && aligned(i) && aligned(i + 1) && length(i) >= 0.01 && length(i + 1) >= 0.01 && Math.abs(xs[i] - xs[i - 1]) < 0.01 !== Math.abs(xs[i + 1] - xs[i]) < 0.01;
+    !linear && i > 0 && i < last && !direct(axes[i]) && !direct(axes[i + 1]) && aligned(i) && aligned(i + 1) && length(i) >= 0.01 && length(i + 1) >= 0.01 && Math.abs(xs[i] - xs[i - 1]) < 0.01 !== Math.abs(xs[i + 1] - xs[i]) < 0.01;
   // An edge that curves into a marker runs straight for a little way first, where it has the
   // room, so that the marker does not sit on the bend.
   const along = (i: number, ux: number, uy: number): number => Math.abs(xs[i] - xs[i - 1]) * Math.abs(ux) + Math.abs(ys[i] - ys[i - 1]) * Math.abs(uy);

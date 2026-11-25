@@ -1,4 +1,5 @@
-import { cnode, compoundLayout, direction, type CEdge, type CNode } from '../../layout/compound.js';
+import { cnode, direction, type CEdge, type CNode } from '../../layout/compound.js';
+import { placeGraph } from '../../layout/place.js';
 import { wrapComponents } from '../../layout/components.js';
 import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num } from '../../svg/builder.js';
@@ -315,7 +316,7 @@ function draw(db: ClassDb, config: Config, options: RenderOptions, turned: boole
     const cardHeight = (raw: string): number => (raw ? Math.max(tinyHeight, mathText(raw, tiny)?.height ?? 0) : 0);
     for (const edge of drawn) tallCards = Math.max(tallCards, cardHeight(edge.startLabelRight) + cardHeight(edge.endLabelLeft) - 2 * tinyHeight);
   }
-  const layout = compoundLayout(cnodes, cedges, rootDir, {
+  const layout = placeGraph(cnodes, cedges, rootDir, {
     nodeSep: numberOption(conf, 'nodeSpacing', NODE_SEP),
     edgeSep: EDGE_SEP,
     rankSep: numberOption(conf, 'rankSpacing', lettered ? RANK_SEP + 16 : RANK_SEP) + tallCards,

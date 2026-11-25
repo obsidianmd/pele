@@ -1,4 +1,5 @@
-import { cnode, compoundLayout, direction, type CEdge, type CNode } from '../../layout/compound.js';
+import { cnode, direction, type CEdge, type CNode } from '../../layout/compound.js';
+import { placeGraph } from '../../layout/place.js';
 import { titleLabel } from '../../svg/title.js';
 import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num, sharedStyle, spanStyle, textStyle } from '../../svg/builder.js';
@@ -247,7 +248,7 @@ function draw(model: RequirementModel, _config: Config, options: RenderOptions, 
     });
   }
 
-  const layout = compoundLayout(cnodes, cedges, rootDir, {
+  const layout = placeGraph(cnodes, cedges, rootDir, {
     nodeSep: NODE_SEP,
     edgeSep: EDGE_SEP,
     rankSep: RANK_SEP,

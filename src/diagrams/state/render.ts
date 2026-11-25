@@ -1,4 +1,5 @@
-import { cnode, compoundLayout, direction, type CEdge, type CNode, type Dir } from '../../layout/compound.js';
+import { cnode, direction, type CEdge, type CNode, type Dir } from '../../layout/compound.js';
+import { placeGraph } from '../../layout/place.js';
 import type { Config } from '../../preprocess.js';
 import { esc, escText, labelSvg, num } from '../../svg/builder.js';
 import { casingsSvg, edgeCasing, edgeLabelSvg, marker, markerTrim, overFills, routePath, sideReach, type EdgePath, type Fill } from '../../svg/edges.js';
@@ -394,7 +395,7 @@ function draw(db: StateDb, config: Config, options: RenderOptions, turned: boole
     }
   }
 
-  const layout = compoundLayout(cnodes, cedges, rootDir, {
+  const layout = placeGraph(cnodes, cedges, rootDir, {
     nodeSep: numberOption(config, 'nodeSpacing', NODE_SEP),
     edgeSep: EDGE_SEP,
     rankSep: numberOption(config, 'rankSpacing', RANK_SEP),
